@@ -16,8 +16,10 @@ from geobrain.choropleth_render import render_brain_slice
 from geobrain.delta import (
 	apply_significance_mask,
 	compute_delta,
-	symmetric_delta_limits,
-	test_region_differences,
+	significance_color,
+	test_multi_sample,
+	test_one_sample,
+	test_two_sample,
 )
 from geobrain.coord_system import (
 	CCFConfig,
@@ -58,8 +60,10 @@ __all__ = [
 	"render_brain_slice",
 	"apply_significance_mask",
 	"compute_delta",
-	"symmetric_delta_limits",
-	"test_region_differences",
+	"significance_color",
+	"test_multi_sample",
+	"test_one_sample",
+	"test_two_sample",
 	"CCFConfig",
 	"coord_mm_to_slice_index",
 	"get_ccf_config",

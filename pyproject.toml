@@ -30,6 +30,7 @@ dependencies = [
     "plotly",
     "pandas",
     "scipy",
+    "statsmodels",
     "h5py",
     "requests",
     "pynrrd",

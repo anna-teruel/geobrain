@@ -1,19 +1,5 @@
 """
-Region-level group comparisons.
-
-Three statistical modes are supported, all sharing the same
-Benjamini-Hochberg FDR correction and a common output shape (p_value,
-p_adj, significant):
-
-- test_two_sample: compare two groups per region (t-test or Mann-Whitney).
-- test_one_sample: test one group against a reference value (e.g. 0).
-- test_multi_sample: n-way ANOVA across one or more categorical factors
-  (e.g. group, or group x sex), for comparing more than two groups at once.
-
-Two-sample and one-sample tests carry a signed "effect" column, so results
-can be plotted on a diverging colormap. Multi-sample ANOVA has no single
-direction once there are more than two groups, so its significance is
-always unsigned.
+Subtract two region-level score tables into a per-region delta.
 """
 
 import re
@@ -41,12 +27,14 @@ def compute_delta(
 	label_b: str = "B",
 ) -> pd.DataFrame:
 	"""
-	Subtract two region-level score tables to compute per-region deltas.
+	Subtract two region-level score tables into a per-region delta
+	(delta = df_a - df_b), so two groups can be compared on one
+	diverging-colormap figure instead of two side-by-side atlas plots.
 
 	Args:
 	    df_a, df_b : pd.DataFrame
-	        Region-level score tables (one row per region), e.g. the output
-	        of score_table(). Sign convention: delta = df_a - df_b.
+	        Region-level score tables (one row per region), e.g. the
+	        output of score_table().
 	    value_col : str
 	        Score column to compare (e.g. "density", "relative_abundance_z").
 	    col_id : str, default="Region ID"
@@ -61,11 +49,23 @@ def compute_delta(
 	    pd.DataFrame
 	        Columns: [col_id, col_name, f"{value_col}_{label_a}",
 	        f"{value_col}_{label_b}", "delta"]. Only regions present in
-	        both df_a and df_b are kept.
+	        both df_a and df_b are kept (inner join).
 
 	Raises:
 	    KeyError: If value_col is missing from either input table.
 	    ValueError: If label_a and label_b are equal.
+
+	Example:
+	    >>> score_females = scores[scores["group_label"] == "female"]
+	    >>> score_males = scores[scores["group_label"] == "male"]
+	    >>> delta_df = compute_delta(
+	    ...     score_females,
+	    ...     score_males,
+	    ...     value_col="relative_abundance_z",
+	    ...     label_a="Female",
+	    ...     label_b="Male",
+	    ... )
+	    >>> delta_df["delta"]  # relative_abundance_z_Female - relative_abundance_z_Male
 	"""
 	if value_col not in df_a.columns or value_col not in df_b.columns:
 		raise KeyError(f"'{value_col}' must be present in both score tables.")
@@ -76,41 +76,16 @@ def compute_delta(
 	col_a = f"{value_col}_{label_a}"
 	col_b = f"{value_col}_{label_b}"
 
-	merged = (
-		df_a[[col_id, col_name, value_col]]
-		.rename(columns={value_col: col_a})
-		.merge(
-			df_b[[col_id, col_name, value_col]].rename(columns={value_col: col_b}),
-			on=[col_id, col_name],
-			how="inner",
-		)
+	merged = df_a[[col_id, col_name, value_col]].merge(
+		df_b[[col_id, col_name, value_col]],
+		on=[col_id, col_name],
+		how="inner",
+		suffixes=(f"_{label_a}", f"_{label_b}"),
 	)
 
 	merged["delta"] = merged[col_a] - merged[col_b]
 
 	return merged
-
-
-def symmetric_limits(values: pd.Series) -> tuple[float, float]:
-	"""
-	Compute symmetric color limits around zero for a diverging colormap.
-
-	Args:
-	    values : pd.Series
-	        Values to be plotted on a diverging colormap, e.g.
-	        compute_delta(...)["delta"] or a signed significance_color().
-
-	Returns:
-	    tuple[float, float]
-	        (-vmax, vmax), where vmax is the largest absolute value.
-	        Returns (-1.0, 1.0) if values is empty or entirely NaN.
-	"""
-	vmax = float(values.abs().max(skipna=True)) if len(values) else float("nan")
-
-	if not vmax or np.isnan(vmax):
-		vmax = 1.0
-
-	return -vmax, vmax
 
 
 def _benjamini_hochberg(pvalues: np.ndarray) -> np.ndarray:

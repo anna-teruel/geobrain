@@ -1,4 +1,4 @@
-"""Shared fixtures for the PlotlyBrain backend test suite.
+"""Shared fixtures for the GeoBrain backend test suite.
 
 Fixtures are synthetic and self-contained so the suite is deterministic and
 never touches the network (Allen Institute downloads are mocked or avoided).
