@@ -175,8 +175,9 @@ def test_export_slice_no_scores_exports_empty_atlas(
 
 	captured = {}
 
-	def fake_build_export_figure(*, score_records, **kwargs):
+	def fake_build_export_figure(*, score_records, title, **kwargs):
 		captured["score_records"] = score_records
+		captured["title"] = title
 		return "fig"
 
 	monkeypatch.setattr(figure, "build_export_figure", fake_build_export_figure)
@@ -187,6 +188,7 @@ def test_export_slice_no_scores_exports_empty_atlas(
 	out = fn(*_export_args(session, None, slices))  # geometry + slices, no scores
 
 	assert captured["score_records"] == []
+	assert captured["title"] is None
 	assert "Saved" in out.children
 	assert _toast_color(toast_ctx) == "green"
 
@@ -237,9 +239,11 @@ def test_export_all_slices_no_scores_exports_empty_atlas(
 	cache.put(session, "geometry", {"by_slice": {}, "orientation": "coronal"})
 
 	captured = []
+	titles = []
 
-	def fake_build_export_figure(*, score_records, **kwargs):
+	def fake_build_export_figure(*, score_records, title, **kwargs):
 		captured.append(score_records)
+		titles.append(title)
 		return "fig"
 
 	monkeypatch.setattr(figure, "build_export_figure", fake_build_export_figure)
@@ -253,6 +257,34 @@ def test_export_all_slices_no_scores_exports_empty_atlas(
 	)  # geometry + slices, no scores
 
 	assert captured == [[], []]
+	assert titles == [None, None]
+	assert "Saved" in out.children
+	assert _toast_color(toast_ctx) == "green"
+
+
+def test_export_all_slices_with_scores_exports(callbacks_by_name, toast_ctx, session, monkeypatch):
+	"""With scores loaded, each slice is exported using the matched group's records."""
+	cache.put(session, "geometry", {"by_slice": {}, "orientation": "coronal"})
+
+	captured = []
+	titles = []
+
+	def fake_build_export_figure(*, score_records, title, **kwargs):
+		captured.append(score_records)
+		titles.append(title)
+		return "fig"
+
+	monkeypatch.setattr(figure, "build_export_figure", fake_build_export_figure)
+	monkeypatch.setattr(geobrain, "save_figure", lambda fig, **kwargs: "/tmp/brain.svg")
+
+	fn = callbacks_by_name["export_all_slices"]
+	scores = {"All": [{"Region ID": 315, "density": 0.2}]}
+	slices = [{"slice_index": 1}, {"slice_index": 2}]
+	progress_calls = []
+	out = fn(progress_calls.append, *_export_all_args(session, scores, slices))
+
+	assert captured == [scores["All"], scores["All"]]
+	assert titles == ["density - slice 1", "density - slice 2"]
 	assert "Saved" in out.children
 	assert _toast_color(toast_ctx) == "green"
 
