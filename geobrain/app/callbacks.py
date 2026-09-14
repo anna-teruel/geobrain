@@ -953,12 +953,15 @@ def register_callbacks(app) -> None:
 		if geometry is None:
 			_notify("Build or load slices first.", "warning")
 			return "No geometry in memory - build or load slices first."
-		if not scores or not slices:
+		if not slices:
 			_notify("Nothing to export yet.", "warning")
 			return "Nothing to export yet."
 
-		group = group if group in scores else next(iter(scores))
-		records = scores[group]
+		if scores:
+			group = group if group in scores else next(iter(scores))
+			records = scores[group]
+		else:
+			records = []
 		slice_index = int(slices[int(slider_val)]["slice_index"])
 
 		# Match the live view: the row selection narrows coloring and the flat
@@ -1034,12 +1037,15 @@ def register_callbacks(app) -> None:
 		if geometry is None:
 			_notify("Build or load slices first.", "warning")
 			return "No geometry in memory - build or load slices first."
-		if not scores or not slices:
+		if not slices:
 			_notify("Nothing to export yet.", "warning")
 			return "Nothing to export yet."
 
-		group = group if group in scores else next(iter(scores))
-		records = scores[group]
+		if scores:
+			group = group if group in scores else next(iter(scores))
+			records = scores[group]
+		else:
+			records = []
 		orientation = geometry.get("orientation")
 
 		# Match the live view: the row selection narrows coloring and the flat

@@ -16,6 +16,7 @@ import json
 import pytest
 from dash import no_update
 
+import geobrain
 from geobrain.app import cache, figure
 
 
@@ -164,6 +165,30 @@ def test_export_slice_nothing_to_export(callbacks_by_name, toast_ctx, session):
 	out = fn(*_export_args(session, None, None))  # geometry present, no scores
 	assert out == "Nothing to export yet."
 	assert _toast_color(toast_ctx) == "yellow"
+
+
+def test_export_slice_no_scores_exports_empty_atlas(
+	callbacks_by_name, toast_ctx, session, monkeypatch
+):
+	"""Slices without loaded scores still export - a plain atlas map (issue #45)."""
+	cache.put(session, "geometry", {"by_slice": {}, "orientation": "coronal"})
+
+	captured = {}
+
+	def fake_build_export_figure(*, score_records, **kwargs):
+		captured["score_records"] = score_records
+		return "fig"
+
+	monkeypatch.setattr(figure, "build_export_figure", fake_build_export_figure)
+	monkeypatch.setattr(geobrain, "save_figure", lambda fig, **kwargs: "/tmp/brain.svg")
+
+	fn = callbacks_by_name["export_slice"]
+	slices = [{"slice_index": 1}]
+	out = fn(*_export_args(session, None, slices))  # geometry + slices, no scores
+
+	assert captured["score_records"] == []
+	assert "Saved" in out.children
+	assert _toast_color(toast_ctx) == "green"
 
 
 def test_export_slice_export_failure_toasts_error(
