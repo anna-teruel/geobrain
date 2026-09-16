@@ -39,7 +39,6 @@ def load_refatlas_regions(
 	col_name: str = "Region name",
 	col_count: str = "Object count",
 	col_area: str = "Region area",
-	exclude_region_ids: set[int] = {0, 997},
 ) -> pd.DataFrame:
 	"""
 	Load and concatenate QUINT *_RefAtlasRegions.csv files from a directory.
@@ -51,8 +50,6 @@ def load_refatlas_regions(
 	    col_name: Column name for the region name.
 	    col_count: Column name for the object count.
 		col_area: Column name for the region area (typically in squared pixels).
-	    exclude_region_ids: Region IDs to exclude
-	                    (e.g. background/root).
 
 	Returns:
 	    Long-format table with columns ['animal', col_id, col_name, col_count].
@@ -74,8 +71,6 @@ def load_refatlas_regions(
 		df[col_count] = pd.to_numeric(df[col_count], errors="coerce").fillna(0)
 		df[col_area] = pd.to_numeric(df[col_area], errors="coerce").fillna(0)
 
-		if exclude_region_ids:
-			df = df[~df[col_id].isin(exclude_region_ids)]
 		out.append(df)
 	return pd.concat(out, ignore_index=True)
 
@@ -445,7 +440,6 @@ def score_table(
 	col_name: str = "Region name",
 	col_count: str = "Object count",
 	col_area: str = "Region area",
-	exclude_region_ids: set[int] = {0, 997},
 	metadata_path: str | None = None,
 	metadata_sep: str | None = None,
 	animal_col: str = "animal",
@@ -478,8 +472,6 @@ def score_table(
 	        Column containing object counts.
 	    col_area : str, default="Region area"
 	        Column containing region area.
-	    exclude_region_ids : set[int], default={0, 997}
-	        Region IDs to exclude, usually background and root.
 	    metadata_path : str | None, default=None
 	        Optional metadata CSV.
 	    metadata_sep : str | None, default=None
@@ -533,7 +525,6 @@ def score_table(
 		col_name=col_name,
 		col_count=col_count,
 		col_area=col_area,
-		exclude_region_ids=exclude_region_ids,
 	)
 
 	region_by_subject = compute_animal_region_counts(
@@ -631,7 +622,6 @@ def save_scores(
 	col_name: str = "Region name",
 	col_count: str = "Object count",
 	col_area: str = "Region area",
-	exclude_region_ids: set[int] = {0, 997},
 	metadata_path: str | None = None,
 	metadata_sep: str | None = None,
 	animal_col: str = "animal",
@@ -652,7 +642,6 @@ def save_scores(
 		col_name=col_name,
 		col_count=col_count,
 		col_area=col_area,
-		exclude_region_ids=exclude_region_ids,
 		metadata_path=metadata_path,
 		metadata_sep=metadata_sep,
 		animal_col=animal_col,
