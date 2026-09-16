@@ -122,7 +122,7 @@ def test_range_interval_other_orientations(orientation):
 # --- species guard (bregma is mouse-only, see issue #40 discussion) ---------
 
 
-@pytest.mark.parametrize("species", ["human", "Mouse "])  # real species, and no whitespace trimming
+@pytest.mark.parametrize("species", ["human", "Mouse "])
 def test_require_mouse_rejects_non_mouse(species):
 	with pytest.raises(ValueError):
 		_require_mouse(species)
