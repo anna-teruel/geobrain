@@ -116,3 +116,33 @@ def test_range_interval_other_orientations(orientation):
 
 	assert len(out) > 0
 	assert out == sorted(out)
+
+
+# --- species guard (bregma is mouse-only, see issue #40 discussion) ---------
+
+
+@pytest.mark.parametrize("species", ["human", "rat", "Mouse ", ""])
+def test_non_mouse_species_rejected(species):
+	with pytest.raises(ValueError):
+		get_ccf_config(25, species=species)
+
+
+def test_mouse_species_is_case_insensitive():
+	assert get_ccf_config(25, species="MOUSE") == get_ccf_config(25, species="mouse")
+
+
+def test_coord_mm_to_slice_index_rejects_non_mouse():
+	with pytest.raises(ValueError):
+		coord_mm_to_slice_index(-2.0, resolution_um=25, species="human")
+
+
+def test_slice_index_to_coordinate_mm_rejects_non_mouse():
+	with pytest.raises(ValueError):
+		slice_index_to_coordinate_mm(308, resolution_um=25, species="human")
+
+
+def test_range_mm_to_slice_indices_rejects_non_mouse():
+	with pytest.raises(ValueError):
+		range_mm_to_slice_indices(coords_mm=[0.0], resolution_um=25, species="human")
+	with pytest.raises(ValueError):
+		range_mm_to_slice_indices(start_mm=-1.0, end_mm=1.0, resolution_um=25, species="human")
