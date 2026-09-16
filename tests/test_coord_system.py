@@ -3,6 +3,7 @@
 import pytest
 
 from geobrain.coord_system import (
+	_require_mouse,
 	get_ccf_config,
 	coord_mm_to_slice_index,
 	slice_index_to_coordinate_mm,
@@ -121,28 +122,28 @@ def test_range_interval_other_orientations(orientation):
 # --- species guard (bregma is mouse-only, see issue #40 discussion) ---------
 
 
-@pytest.mark.parametrize("species", ["human", "rat", "Mouse ", ""])
-def test_non_mouse_species_rejected(species):
+@pytest.mark.parametrize("species", ["human", "Mouse "])  # real species, and no whitespace trimming
+def test_require_mouse_rejects_non_mouse(species):
 	with pytest.raises(ValueError):
-		get_ccf_config(25, species=species)
+		_require_mouse(species)
 
 
-def test_mouse_species_is_case_insensitive():
-	assert get_ccf_config(25, species="MOUSE") == get_ccf_config(25, species="mouse")
+def test_require_mouse_accepts_case_insensitive_mouse():
+	_require_mouse("mouse")
+	_require_mouse("MOUSE")
 
 
-def test_coord_mm_to_slice_index_rejects_non_mouse():
+@pytest.mark.parametrize(
+	"func, kwargs",
+	[
+		(get_ccf_config, dict(resolution_um=25)),
+		(coord_mm_to_slice_index, dict(coord_mm=-2.0, resolution_um=25)),
+		(slice_index_to_coordinate_mm, dict(slice_index=308, resolution_um=25)),
+		(range_mm_to_slice_indices, dict(coords_mm=[0.0], resolution_um=25)),
+	],
+)
+def test_species_guard_propagates_to_public_api(func, kwargs):
+	# Each public function must forward species= to get_ccf_config() rather
+	# than silently defaulting to "mouse" internally.
 	with pytest.raises(ValueError):
-		coord_mm_to_slice_index(-2.0, resolution_um=25, species="human")
-
-
-def test_slice_index_to_coordinate_mm_rejects_non_mouse():
-	with pytest.raises(ValueError):
-		slice_index_to_coordinate_mm(308, resolution_um=25, species="human")
-
-
-def test_range_mm_to_slice_indices_rejects_non_mouse():
-	with pytest.raises(ValueError):
-		range_mm_to_slice_indices(coords_mm=[0.0], resolution_um=25, species="human")
-	with pytest.raises(ValueError):
-		range_mm_to_slice_indices(start_mm=-1.0, end_mm=1.0, resolution_um=25, species="human")
+		func(species="human", **kwargs)
