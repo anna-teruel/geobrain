@@ -301,7 +301,7 @@ def build_export_figure(
 				)
 			)
 
-	if zmin is not None and zmax is not None and not static_mode:
+	if id2value and zmin is not None and zmax is not None and not static_mode:
 		fig.add_trace(
 			go.Scatter(
 				x=[None, None],
