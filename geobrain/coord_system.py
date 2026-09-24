@@ -14,6 +14,33 @@ Orientation = Literal[
 ]  # orientation is only allowed to have one of these 3 values
 
 
+def _require_mouse(species: str) -> None:
+	"""
+	Guard bregma-relative stereotaxic conversion to mouse only.
+
+	The bregma offsets in this module are curated specifically for the Allen
+	mouse CCF and have no general equivalent across species (BrainGlobe atlas
+	metadata does not carry bregma information at all). See the GeoBrain
+	issue tracker for the generalization discussion; until resolved,
+	non-mouse callers must address slices by index instead of
+	bregma-relative mm.
+
+	Args:
+	    species : str
+	        Species identifier, e.g. from an AtlasProvider.
+
+	Raises:
+	    ValueError
+	        If species is not "mouse" (case-insensitive).
+	"""
+	if species.lower() != "mouse":
+		raise ValueError(
+			f"Bregma-relative stereotaxic coordinates are only supported for "
+			f"species='mouse' (got {species!r}). See the GeoBrain issue tracker "
+			"for the coordinate-system generalization discussion."
+		)
+
+
 @dataclass(frozen=True)
 class CCFConfig:
 	"""
@@ -37,7 +64,7 @@ class CCFConfig:
 	bregma_ap_index: int
 
 
-def get_ccf_config(resolution_um: int) -> CCFConfig:
+def get_ccf_config(resolution_um: int, species: str = "mouse") -> CCFConfig:
 	"""
 	Compute approximate Allen CCF bregma indices for a given voxel resolution.
 
@@ -65,10 +92,19 @@ def get_ccf_config(resolution_um: int) -> CCFConfig:
 	                ML = 216
 	                DV = 18
 	                AP = 228
+	    species : str, default="mouse"
+	        Species the bregma offsets apply to. Only "mouse" is currently
+	        supported; see ``_require_mouse()``.
 
 	Returns:
 	    CCFConfig: Configuration object with resolution and bregma indices, based on our conversion system.
+
+	Raises:
+	    ValueError
+	        If species is not "mouse".
 	"""
+	_require_mouse(species)
+
 	BREGMA_ML_UM = 5400  # microns
 	BREGMA_DV_UM = 450  # microns
 	BREGMA_AP_UM = 5700  # microns
@@ -85,6 +121,7 @@ def coord_mm_to_slice_index(
 	coord_mm: float,
 	orientation: Orientation = "coronal",
 	resolution_um: int = 25,
+	species: str = "mouse",
 ) -> int:
 	"""
 	Convert a stereotaxic coordinate in mm (from Bregma) to the corresponding Allen slice index,
@@ -107,9 +144,14 @@ def coord_mm_to_slice_index(
 	    coord_mm: float. Stereotaxic coordinate in mm relative to Bregma.
 	    orientation: {'coronal', 'sagittal', 'horizontal'}, default = 'coronal'
 	    resolution_um: int, default = 25. Atlas vixel resolution in microns
+	    species: str, default = 'mouse'. Only 'mouse' is currently supported;
+	        see ``_require_mouse()``.
 
 	Returns:
 	    int: approximate slice index in the Allen annotation volume
+
+	Raises:
+	    ValueError: if species is not 'mouse'.
 
 	Example:
 	    For a coronal atlas at 25 µm resolution:
@@ -128,7 +170,7 @@ def coord_mm_to_slice_index(
 
 	    So, AP = -2.0 mm approximately corresponds to Allen Coronal slice index 308.
 	"""
-	cfg = get_ccf_config(resolution_um)
+	cfg = get_ccf_config(resolution_um, species=species)
 	offset_voxels = round(
 		(coord_mm * 1000.0) / cfg.resolution_um
 	)  # how many slices away from bregma your coord is
@@ -152,6 +194,7 @@ def slice_index_to_coordinate_mm(
 	slice_index: int,
 	orientation: Orientation = "coronal",
 	resolution_um: int = 25,
+	species: str = "mouse",
 ) -> float:
 	"""
 	Convert an Allen slice index to an approximate stereotaxic coordinate in mm (from Bregma),
@@ -162,11 +205,16 @@ def slice_index_to_coordinate_mm(
 	    orientation: {'coronal', 'sagittal', 'horizontal}, default = 'coronal',
 	                atlas slicing orientation
 	    resolution_um: int, default = 25, atlas voxel resolution
+	    species: str, default = 'mouse'. Only 'mouse' is currently supported;
+	        see ``_require_mouse()``.
 
 	Returns:
 	    float: approximatestereotaxic coords in mm relative to Bregma.
+
+	Raises:
+	    ValueError: if species is not 'mouse'.
 	"""
-	cfg = get_ccf_config(resolution_um)
+	cfg = get_ccf_config(resolution_um, species=species)
 
 	if orientation == "coronal":
 		offset_voxels = cfg.bregma_ap_index - slice_index
@@ -190,6 +238,7 @@ def range_mm_to_slice_indices(
 	step_mm: float | None = None,
 	orientation: Orientation = "coronal",
 	resolution_um: int = 25,
+	species: str = "mouse",
 ) -> list[int]:
 	"""
 	Convert a range stereotaxic coordinates in mm to Allen slice indices
@@ -222,9 +271,14 @@ def range_mm_to_slice_indices(
 	        Atlas slicing orientation.
 	    resolution_um : int, default=25
 	        Atlas voxel resolution in microns.
+	    species : str, default="mouse"
+	        Only "mouse" is currently supported; see ``_require_mouse()``.
 
 	Returns:
 	    list[int]: Sorted unique Allen slice indices.
+
+	Raises:
+	    ValueError: if species is not "mouse".
 	"""
 	if coords_mm is not None:
 		indices = [
@@ -232,6 +286,7 @@ def range_mm_to_slice_indices(
 				coord_mm=c,
 				orientation=orientation,
 				resolution_um=resolution_um,
+				species=species,
 			)
 			for c in coords_mm
 		]
@@ -245,11 +300,13 @@ def range_mm_to_slice_indices(
 			coord_mm=start_mm,
 			orientation=orientation,
 			resolution_um=resolution_um,
+			species=species,
 		)
 		i1 = coord_mm_to_slice_index(
 			coord_mm=end_mm,
 			orientation=orientation,
 			resolution_um=resolution_um,
+			species=species,
 		)
 
 		lo, hi = sorted((i0, i1))
@@ -271,6 +328,7 @@ def range_mm_to_slice_indices(
 				coord_mm=c,
 				orientation=orientation,
 				resolution_um=resolution_um,
+				species=species,
 			)
 			for c in coords
 		]

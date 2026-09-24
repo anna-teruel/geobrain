@@ -953,13 +953,17 @@ def register_callbacks(app) -> None:
 		if geometry is None:
 			_notify("Build or load slices first.", "warning")
 			return "No geometry in memory - build or load slices first."
-		if not scores or not slices:
+		if not slices:
 			_notify("Nothing to export yet.", "warning")
 			return "Nothing to export yet."
 
-		group = group if group in scores else next(iter(scores))
-		records = scores[group]
+		if scores:
+			group = group if group in scores else next(iter(scores))
+			records = scores[group]
+		else:
+			records = []
 		slice_index = int(slices[int(slider_val)]["slice_index"])
+		title = f"{score} - slice {slice_index}" if scores else None
 
 		# Match the live view: the row selection narrows coloring and the flat
 		# color carries over. The table's text filter is browse-only.
@@ -974,7 +978,7 @@ def register_callbacks(app) -> None:
 				colorscale=colorscale,
 				zmin=zmin,
 				zmax=zmax,
-				title=f"{score} - slice {slice_index}",
+				title=title,
 				selected_rids=selected,
 				flat_color=flat,
 			)
@@ -1034,12 +1038,15 @@ def register_callbacks(app) -> None:
 		if geometry is None:
 			_notify("Build or load slices first.", "warning")
 			return "No geometry in memory - build or load slices first."
-		if not scores or not slices:
+		if not slices:
 			_notify("Nothing to export yet.", "warning")
 			return "Nothing to export yet."
 
-		group = group if group in scores else next(iter(scores))
-		records = scores[group]
+		if scores:
+			group = group if group in scores else next(iter(scores))
+			records = scores[group]
+		else:
+			records = []
 		orientation = geometry.get("orientation")
 
 		# Match the live view: the row selection narrows coloring and the flat
@@ -1060,7 +1067,7 @@ def register_callbacks(app) -> None:
 					colorscale=colorscale,
 					zmin=zmin,
 					zmax=zmax,
-					title=f"{score} - slice {slice_index}",
+					title=f"{score} - slice {slice_index}" if scores else None,
 					selected_rids=selected,
 					flat_color=flat,
 				)

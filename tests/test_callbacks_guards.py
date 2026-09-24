@@ -16,6 +16,7 @@ import json
 import pytest
 from dash import no_update
 
+import geobrain
 from geobrain.app import cache, figure
 
 
@@ -164,6 +165,128 @@ def test_export_slice_nothing_to_export(callbacks_by_name, toast_ctx, session):
 	out = fn(*_export_args(session, None, None))  # geometry present, no scores
 	assert out == "Nothing to export yet."
 	assert _toast_color(toast_ctx) == "yellow"
+
+
+def test_export_slice_no_scores_exports_empty_atlas(
+	callbacks_by_name, toast_ctx, session, monkeypatch
+):
+	"""Slices without loaded scores still export - a plain atlas map (issue #45)."""
+	cache.put(session, "geometry", {"by_slice": {}, "orientation": "coronal"})
+
+	captured = {}
+
+	def fake_build_export_figure(*, score_records, title, **kwargs):
+		captured["score_records"] = score_records
+		captured["title"] = title
+		return "fig"
+
+	monkeypatch.setattr(figure, "build_export_figure", fake_build_export_figure)
+	monkeypatch.setattr(geobrain, "save_figure", lambda fig, **kwargs: "/tmp/brain.svg")
+
+	fn = callbacks_by_name["export_slice"]
+	slices = [{"slice_index": 1}]
+	out = fn(*_export_args(session, None, slices))  # geometry + slices, no scores
+
+	assert captured["score_records"] == []
+	assert captured["title"] is None
+	assert "Saved" in out.children
+	assert _toast_color(toast_ctx) == "green"
+
+
+# --------------------------------------------------------------------------- #
+# export_all_slices - missing geometry / nothing to export / no scores
+# --------------------------------------------------------------------------- #
+def _export_all_args(session_id, scores, slices):
+	"""Positional args for export_all_slices (background callback: no set_progress)."""
+	return (
+		1,  # n_clicks
+		session_id,
+		scores,
+		slices,
+		"density",  # score
+		"All",  # group
+		"Viridis",  # colorscale
+		None,  # zmin
+		None,  # zmax
+		".",  # out_dir
+		"brain",  # name
+		"svg",  # fmt
+		None,  # selected_ids
+		None,  # static_color
+		False,  # use_flat
+	)
+
+
+def test_export_all_slices_no_geometry(callbacks_by_name, toast_ctx):
+	fn = callbacks_by_name["export_all_slices"]
+	out = fn(lambda *a: None, *_export_all_args(None, None, None))
+	assert out == "No geometry in memory - build or load slices first."
+	assert _toast_color(toast_ctx) == "yellow"
+
+
+def test_export_all_slices_nothing_to_export(callbacks_by_name, toast_ctx, session):
+	cache.put(session, "geometry", {"by_slice": {}, "orientation": "coronal"})
+	fn = callbacks_by_name["export_all_slices"]
+	out = fn(lambda *a: None, *_export_all_args(session, None, None))  # no slices
+	assert out == "Nothing to export yet."
+	assert _toast_color(toast_ctx) == "yellow"
+
+
+def test_export_all_slices_no_scores_exports_empty_atlas(
+	callbacks_by_name, toast_ctx, session, monkeypatch
+):
+	"""Slices without loaded scores still export - a plain atlas map (issue #45)."""
+	cache.put(session, "geometry", {"by_slice": {}, "orientation": "coronal"})
+
+	captured = []
+	titles = []
+
+	def fake_build_export_figure(*, score_records, title, **kwargs):
+		captured.append(score_records)
+		titles.append(title)
+		return "fig"
+
+	monkeypatch.setattr(figure, "build_export_figure", fake_build_export_figure)
+	monkeypatch.setattr(geobrain, "save_figure", lambda fig, **kwargs: "/tmp/brain.svg")
+
+	fn = callbacks_by_name["export_all_slices"]
+	slices = [{"slice_index": 1}, {"slice_index": 2}]
+	progress_calls = []
+	out = fn(
+		progress_calls.append, *_export_all_args(session, None, slices)
+	)  # geometry + slices, no scores
+
+	assert captured == [[], []]
+	assert titles == [None, None]
+	assert "Saved" in out.children
+	assert _toast_color(toast_ctx) == "green"
+
+
+def test_export_all_slices_with_scores_exports(callbacks_by_name, toast_ctx, session, monkeypatch):
+	"""With scores loaded, each slice is exported using the matched group's records."""
+	cache.put(session, "geometry", {"by_slice": {}, "orientation": "coronal"})
+
+	captured = []
+	titles = []
+
+	def fake_build_export_figure(*, score_records, title, **kwargs):
+		captured.append(score_records)
+		titles.append(title)
+		return "fig"
+
+	monkeypatch.setattr(figure, "build_export_figure", fake_build_export_figure)
+	monkeypatch.setattr(geobrain, "save_figure", lambda fig, **kwargs: "/tmp/brain.svg")
+
+	fn = callbacks_by_name["export_all_slices"]
+	scores = {"All": [{"Region ID": 315, "density": 0.2}]}
+	slices = [{"slice_index": 1}, {"slice_index": 2}]
+	progress_calls = []
+	out = fn(progress_calls.append, *_export_all_args(session, scores, slices))
+
+	assert captured == [scores["All"], scores["All"]]
+	assert titles == ["density - slice 1", "density - slice 2"]
+	assert "Saved" in out.children
+	assert _toast_color(toast_ctx) == "green"
 
 
 def test_export_slice_export_failure_toasts_error(
