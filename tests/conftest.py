@@ -108,8 +108,9 @@ def _write_quint_csv(path, region_rows):
 	"""Write a QUINT-style ';'-separated *_RefAtlasRegions.csv file.
 
 	region_rows: list of (region_id, region_name, object_count, region_area).
-	Always includes background (0) and root (997) rows so exclusion logic is
-	exercised by load_refatlas_regions.
+	Always includes background (0) and root (997) rows to verify
+	load_refatlas_regions retains them (GeoBrain no longer excludes any
+	region by ID; see issue #40).
 	"""
 	header = "Region ID;Region name;Object count;Region area"
 	lines = [header, "0;Clear Label;1;0", "997;root;0;72746.0"]
