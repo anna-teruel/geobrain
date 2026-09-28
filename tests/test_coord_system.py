@@ -147,3 +147,33 @@ def test_species_guard_propagates_to_public_api(func, kwargs):
 	# than silently defaulting to "mouse" internally.
 	with pytest.raises(ValueError):
 		func(species="human", **kwargs)
+
+
+def test_has_bregma_only_for_mouse():
+	from geobrain.coord_system import has_bregma
+
+	assert has_bregma("mouse") and has_bregma("Mouse")
+	assert not has_bregma("Homo sapiens")
+
+
+def test_atlas_range_mm_to_slice_indices():
+	from geobrain.coord_system import atlas_extent_mm, atlas_range_mm_to_slice_indices
+
+	shape = (40, 30, 20)  # coronal 40, horizontal 30, sagittal 20 slices
+	assert atlas_extent_mm(shape, "coronal", 500) == 19.5
+	assert atlas_extent_mm(shape, "sagittal", 500) == 9.5
+
+	# every slice when no step; ends in either order
+	assert atlas_range_mm_to_slice_indices(2.0, 0.0, shape, resolution_um=500) == [0, 1, 2, 3, 4]
+	assert atlas_range_mm_to_slice_indices(0.0, 5.0, shape, step_mm=2.5, resolution_um=500) == [
+		0,
+		5,
+		10,
+	]
+	# positions outside the volume are dropped, not clipped
+	assert atlas_range_mm_to_slice_indices(
+		8.0, 12.0, shape, step_mm=1.0, orientation="sagittal", resolution_um=500
+	) == [16, 18]
+	assert atlas_range_mm_to_slice_indices(-3.0, -1.0, shape, resolution_um=500) == []
+	with pytest.raises(ValueError):
+		atlas_range_mm_to_slice_indices(0.0, 1.0, shape, step_mm=0, resolution_um=500)

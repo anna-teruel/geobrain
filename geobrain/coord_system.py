@@ -41,6 +41,72 @@ def _require_mouse(species: str) -> None:
 		)
 
 
+def has_bregma(species: str) -> bool:
+	"""Whether bregma-relative coordinates exist for ``species`` (mouse only)."""
+	return species.lower() == "mouse"
+
+
+# Volume axis each orientation slices along (matches get_slice_view).
+_SLICE_AXIS = {"coronal": 0, "horizontal": 1, "sagittal": 2}
+
+
+def atlas_extent_mm(
+	volume_shape: tuple[int, ...],
+	orientation: Orientation,
+	resolution_um: float,
+) -> float:
+	"""
+	Extent in mm of the volume along the axis sliced by ``orientation``,
+	i.e. the position of its last slice measured from its first one.
+	"""
+	return (volume_shape[_SLICE_AXIS[orientation]] - 1) * resolution_um / 1000.0
+
+
+def atlas_range_mm_to_slice_indices(
+	start_mm: float,
+	end_mm: float,
+	volume_shape: tuple[int, ...],
+	step_mm: float | None = None,
+	orientation: Orientation = "coronal",
+	resolution_um: float = 25,
+) -> list[int]:
+	"""
+	Convert a range in mm measured from the atlas's first slice (index 0)
+	into slice indices. Species-agnostic alternative to
+	``range_mm_to_slice_indices`` for atlases without a bregma reference.
+
+	Args:
+	    start_mm, end_mm : float
+	        Range ends in mm from the first slice along the slicing axis.
+	    volume_shape : tuple[int, ...]
+	        Shape of the 3D annotation volume.
+	    step_mm : float | None
+	        Spacing in mm between sampled slices. If None, every slice in
+	        the range is returned.
+	    orientation : {"coronal", "sagittal", "horizontal"}, default="coronal"
+	    resolution_um : float, default=25
+	        Atlas voxel resolution in microns.
+
+	Returns:
+	    list[int]: Sorted unique slice indices inside the volume. Positions
+	    outside the volume are dropped, so the list can be empty.
+
+	Raises:
+	    ValueError: if step_mm is not positive.
+	"""
+	n_slices = volume_shape[_SLICE_AXIS[orientation]]
+	lo_mm, hi_mm = sorted((start_mm, end_mm))
+	if step_mm is None:
+		coords = np.arange(lo_mm, hi_mm + 1e-9, resolution_um / 1000.0)
+	elif step_mm <= 0:
+		raise ValueError("step_mm must be positive.")
+	else:
+		coords = np.arange(lo_mm, hi_mm + step_mm, step_mm)
+		coords = coords[coords <= hi_mm + 1e-9]
+	indices = {int(round(c * 1000.0 / resolution_um)) for c in coords}
+	return sorted(i for i in indices if 0 <= i < n_slices)
+
+
 @dataclass(frozen=True)
 class CCFConfig:
 	"""

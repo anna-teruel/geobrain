@@ -42,6 +42,7 @@ dependencies = [
     "multiprocess",
     "psutil",
     "tqdm",
+    "brainglobe-atlasapi>=3.0.1",
 ]
 
     [project.urls]

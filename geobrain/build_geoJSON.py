@@ -542,6 +542,7 @@ def build_geojson(
 	structure_df: pd.DataFrame,
 	orientation: str,
 	resolution_um: int = 25,
+	species: str = "mouse",
 	min_area_px: float = 5.0,
 	simplify_px: float = 0.8,
 	smooth_sigma: float = 1.0,
@@ -584,6 +585,11 @@ def build_geojson(
 	        Slice orientation used when extracting 2D views from the volume.
 	    resolution_um : int, default=25
 	        Atlas voxel resolution in microns.
+	    species : str, default="mouse"
+	        Atlas species, e.g. ``AtlasProvider.species``. Bregma-relative
+	        coordinates (coords_mm, start_mm/end_mm) are only supported for
+	        "mouse"; other species must select slices with slice_indices, and
+	        their features get ``coordinate_mm=None``.
 	    min_area_px : float, default=5.0
 	        Minimum polygon area in pixels. Smaller polygons are discarded.
 	    simplify_px : float, default=0.8
@@ -682,6 +688,7 @@ def build_geojson(
 				coord_mm=coord,
 				orientation=orientation,
 				resolution_um=resolution_um,
+				species=species,
 			)
 			for coord in coords_mm
 		]
@@ -693,6 +700,7 @@ def build_geojson(
 			step_mm=step_mm,
 			orientation=orientation,
 			resolution_um=resolution_um,
+			species=species,
 		)
 
 	id2row = structure_df.set_index("id").to_dict(orient="index")
@@ -701,11 +709,15 @@ def build_geojson(
 	for slice_index in tqdm(slice_indices, desc="Building GeoJSON slices"):
 		slice_img = get_slice_view(volume, slice_index, orientation)
 
-		coordinate_mm = slice_index_to_coordinate_mm(
-			slice_index=slice_index,
-			orientation=orientation,
-			resolution_um=resolution_um,
-		)  # we convert to mm for metadata
+		try:
+			coordinate_mm = slice_index_to_coordinate_mm(
+				slice_index=slice_index,
+				orientation=orientation,
+				resolution_um=resolution_um,
+				species=species,
+			)  # we convert to mm for metadata
+		except ValueError:  # no bregma for this species (see `_require_mouse`)
+			coordinate_mm = None
 
 		unique_ids = np.unique(slice_img)  # find allen region IDs inside the loaded slice
 		unique_ids = unique_ids[unique_ids != 0]  # exclude the background

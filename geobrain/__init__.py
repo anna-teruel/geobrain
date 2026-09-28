@@ -1,3 +1,4 @@
+from geobrain.brainglobe_atlas import AtlasProvider, BrainGlobeProvider, list_available_atlases
 from geobrain.build_geoJSON import (
 	ANNOTATION_URLS,
 	STRUCTURE_GRAPH_URL,
@@ -15,12 +16,15 @@ from geobrain.build_geoJSON import (
 from geobrain.choropleth_render import render_brain_slice
 from geobrain.coord_system import (
 	CCFConfig,
+	atlas_extent_mm,
+	atlas_range_mm_to_slice_indices,
 	coord_mm_to_slice_index,
+	has_bregma,
 	get_ccf_config,
 	range_mm_to_slice_indices,
 	slice_index_to_coordinate_mm,
 )
-from geobrain.io import load_geojson, load_score, save_figure
+from geobrain.io import load_atlas, load_geojson, load_score, save_figure
 from geobrain.metadata import MetadataConfig
 from geobrain.scores import (
 	compute_animal_region_counts,
@@ -37,6 +41,10 @@ from geobrain.scores import (
 from geobrain.types import ReferenceMode, RelAbundanceMethod, ScoreName
 
 __all__ = [
+	"AtlasProvider",
+	"BrainGlobeProvider",
+	"list_available_atlases",
+	"load_atlas",
 	"ANNOTATION_URLS",
 	"STRUCTURE_GRAPH_URL",
 	"BuildConfig",
@@ -51,7 +59,10 @@ __all__ = [
 	"scale_cartesian_to_lonlat",
 	"render_brain_slice",
 	"CCFConfig",
+	"atlas_extent_mm",
+	"atlas_range_mm_to_slice_indices",
 	"coord_mm_to_slice_index",
+	"has_bregma",
 	"get_ccf_config",
 	"range_mm_to_slice_indices",
 	"slice_index_to_coordinate_mm",

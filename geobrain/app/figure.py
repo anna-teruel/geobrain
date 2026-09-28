@@ -55,6 +55,7 @@ def build_slice_geometry(
 	smooth_sigma: float = 1.0,
 	polygon_mode: str = "contour",
 	progress=None,
+	species: str = "mouse",
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 	"""Build undistorted, correctly-oriented pixel geometry for the given slices.
 
@@ -68,7 +69,9 @@ def build_slice_geometry(
 
 	``rings`` are exterior rings ``[[x, y], ...]`` in pixel/screen coordinates
 	(holes are dropped, matching ``plotly_render``). ``progress`` is an optional
-	``callable(i, n, slice_index)`` used to drive the progress bar.
+	``callable(i, n, slice_index)`` used to drive the progress bar. ``species``
+	decides whether slices get a bregma-relative ``coordinate_mm`` (mouse
+	only) or ``None``.
 	"""
 	id2row = structure_df.set_index("id").to_dict(orient="index")
 	by_slice: dict[str, list[dict[str, Any]]] = {}
@@ -82,7 +85,10 @@ def build_slice_geometry(
 		n_rows, n_cols = slice_img.shape
 		dims = _screen_dims(orientation, n_rows, n_cols)
 
-		coord_mm = slice_index_to_coordinate_mm(si, orientation, resolution_um)
+		try:
+			coord_mm = slice_index_to_coordinate_mm(si, orientation, resolution_um, species=species)
+		except ValueError:  # no bregma for this species (see _require_mouse)
+			coord_mm = None
 
 		regions: list[dict[str, Any]] = []
 		unique_ids = np.unique(slice_img)
@@ -115,7 +121,12 @@ def build_slice_geometry(
 			regions.append({"rid": rid, "name": row.get("name") or str(rid), "rings": rings})
 
 		by_slice[str(si)] = regions
-		slices_meta.append({"slice_index": si, "coordinate_mm": round(float(coord_mm), 3)})
+		slices_meta.append(
+			{
+				"slice_index": si,
+				"coordinate_mm": None if coord_mm is None else round(float(coord_mm), 3),
+			}
+		)
 		if progress is not None:
 			progress(i, n, si)
 

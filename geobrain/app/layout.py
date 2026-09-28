@@ -2,9 +2,12 @@ import dash_mantine_components as dmc
 import plotly.express as px
 from dash import dash_table, dcc, html
 
+from geobrain.brainglobe_atlas import list_available_atlases
 from geobrain.colormaps import CUSTOM_COLORSCALES
 
-RESOLUTIONS = [{"label": f"{r} µm", "value": str(r)} for r in (10, 25, 50, 100)]
+DEFAULT_SPECIES = "mouse"
+DEFAULT_ATLAS = "allen_mouse"
+DEFAULT_ATLAS_NAME = "allen_mouse_25um"
 ORIENTATIONS = [
 	{"label": "Coronal", "value": "coronal"},
 	{"label": "Sagittal", "value": "sagittal"},
@@ -35,6 +38,37 @@ REF_MODES = [
 EXPORT_FORMATS = [{"label": f, "value": f} for f in ("svg", "png", "pdf", "html")]
 
 
+def pick_option(options, preferred):
+	"""``preferred`` if it is one of the select ``options``, else the first one."""
+	values = [o["value"] for o in options]
+	if preferred in values:
+		return preferred
+	return values[0] if values else None
+
+
+def species_options(catalog):
+	"""Select options for each species in the BrainGlobe atlas catalog."""
+	return [{"label": sp.capitalize(), "value": sp} for sp in sorted(catalog["species"].unique())]
+
+
+def atlas_options(catalog, species):
+	"""Select options for the atlases (name without resolution) of one species."""
+	atlases = catalog.loc[catalog["species"] == species, "atlas"].unique()
+	return [{"label": a, "value": a} for a in sorted(atlases)]
+
+
+def resolution_options(catalog, atlas):
+	"""Select options for one atlas's resolutions; values are full atlas names."""
+	rows = catalog[catalog["atlas"] == atlas]
+	return [
+		{
+			"label": f"{row.resolution_um:g} µm" + (" (downloaded)" if row.downloaded else ""),
+			"value": row.name,
+		}
+		for row in rows.itertuples(index=False)
+	]
+
+
 def _section_title(step: str, title: str):
 	return dmc.Group(
 		[
@@ -49,14 +83,39 @@ def _card(children, p="md", **kwargs):
 	return dmc.Card(children, withBorder=True, radius="md", shadow="xs", p=p, **kwargs)
 
 
-CARD_FILL = {"flex": "1 1 auto", "minHeight": 0, "overflowY": "auto"}
+# Steps 1 and 2 share what the logo leaves of the top row, 3:2 in favour of
+# step 1 (flex-basis 0, so the split doesn't depend on their contents). Each
+# scrolls internally; the floors make the whole row scroll on short screens
+# instead of squashing a card to its header.
+STEP1_CARD = {"flex": "3 1 0", "minHeight": 150, "overflowY": "auto"}
+CARD_FILL = {"flex": "2 1 0", "minHeight": 150, "overflowY": "auto"}
 
 # definite column height = viewport minus app chrome (padding 12+12 + header 38+4)
 COL_HEIGHT = "calc(100vh - 66px)"
 
+# Both columns are split into the same two rows: top (logo + steps 1-2 | slice
+# display) and bottom (step 3 | controls + table). Using identical flex rules,
+# column heights and gaps on both sides keeps the rows level by construction,
+# whatever the viewport, zoom or card contents. Each row scrolls internally.
+# The row boxes themselves must be plain wrappers (no padding/border): flexbox
+# scales shrinking by each box's content size, so a padded card on one side
+# would end up a fraction of a pixel off the unpadded box on the other.
+TOP_ROW = {"flex": "1 1 70%", "minHeight": "320px"}
+BOTTOM_ROW = {"flex": "1 1 30%", "minHeight": "320px"}
+ROW_FILL = {"display": "flex", "flexDirection": "column"}
+# A card filling its row wrapper.
+FILL_ROW = {"flex": "1 1 auto", "minHeight": 0}
+COLUMN = {"height": COL_HEIGHT, "overflowY": "auto", "overflowX": "hidden"}
+
 
 # left panel : processing pipeline
 def _step1_load():
+	catalog = list_available_atlases()
+	species_opts = species_options(catalog)
+	species = pick_option(species_opts, DEFAULT_SPECIES)
+	atlas_opts = atlas_options(catalog, species)
+	atlas = pick_option(atlas_opts, DEFAULT_ATLAS)
+	res_opts = resolution_options(catalog, atlas)
 	return _card(
 		dmc.Stack(
 			[
@@ -73,10 +132,26 @@ def _step1_load():
 							dmc.Stack(
 								[
 									dmc.Select(
+										id="species-select",
+										label="Species",
+										data=species_opts,
+										value=species,
+										searchable=True,
+										allowDeselect=False,
+									),
+									dmc.Select(
+										id="atlas-select",
+										label="Atlas",
+										data=atlas_opts,
+										value=atlas,
+										searchable=True,
+										allowDeselect=False,
+									),
+									dmc.Select(
 										id="resolution-select",
 										label="Resolution",
-										data=RESOLUTIONS,
-										value="25",
+										data=res_opts,
+										value=pick_option(res_opts, DEFAULT_ATLAS_NAME),
 										allowDeselect=False,
 									),
 									dmc.Button("Load atlas", id="load-raw-btn", fullWidth=True),
@@ -129,7 +204,7 @@ def _step1_load():
 			],
 			gap="sm",
 		),
-		style=CARD_FILL,
+		style=STEP1_CARD,
 	)
 
 
@@ -160,6 +235,7 @@ def _step2_geojson():
 					grow=True,
 					gap="xs",
 				),
+				dmc.Text(id="geo-range-hint", size="xs", c="dimmed"),
 				dmc.Accordion(
 					value=None,
 					children=dmc.AccordionItem(
@@ -358,7 +434,7 @@ def _step3_scores():
 			],
 			gap="sm",
 		),
-		style={"flex": "1 1 auto", "minHeight": 320, "maxHeight": 403, "overflowY": "auto"},
+		style={**FILL_ROW, "overflowY": "auto"},
 	)
 
 
@@ -400,23 +476,31 @@ def _header():
 def _left_panel():
 	return dmc.Stack(
 		[
-			html.Img(
-				src="/assets/GeoBrain_logo2.png",
-				style={
-					"width": "100%",
-					"maxWidth": "300px",
-					"height": "auto",
-					"display": "block",
-					"margin": "0 auto",
-				},
-				alt="GeoBrain logo",
+			dmc.Stack(
+				[
+					html.Img(
+						src="/assets/GeoBrain_logo2.png",
+						style={
+							"width": "100%",
+							"maxWidth": "300px",
+							"height": "auto",
+							"display": "block",
+							"margin": "0 auto",
+							"flex": "0 0 auto",
+						},
+						alt="GeoBrain logo",
+					),
+					_step1_load(),
+					_step2_geojson(),
+				],
+				gap="md",
+				# Short screens: this row scrolls rather than squashing step 2.
+				style={**TOP_ROW, "overflowY": "auto", "overflowX": "hidden"},
 			),
-			_step1_load(),
-			_step2_geojson(),
-			_step3_scores(),
+			html.Div(_step3_scores(), style={**BOTTOM_ROW, **ROW_FILL}),
 		],
 		gap="md",
-		style={"height": COL_HEIGHT},
+		style=COLUMN,
 	)
 
 
@@ -462,7 +546,7 @@ def _brain_graph():
 		# The graph takes ~70% of the column so the lower Flex below it roughly lines
 		# up with the left column's step-3 card. A px floor (not 58vh) avoids forcing
 		# overflow; it still drives the column's scroll fallback on very short screens.
-		style={"flex": "1 1 70%", "minHeight": "320px"},
+		style=FILL_ROW,
 	)
 
 
@@ -617,14 +701,14 @@ def _table_panel():
 def _right_panel():
 	return dmc.Stack(
 		[
-			_brain_graph(),
+			html.Div(_brain_graph(), style={**TOP_ROW, **ROW_FILL}),
 			dmc.Flex(
 				[
 					html.Div(_controls_panel(), style={"flex": "5 1 0", "minWidth": 0}),
 					html.Div(_table_panel(), style={"flex": "7 1 0", "minWidth": 0}),
 				],
 				gap="md",
-				style={"flex": "1 1 30%", "minHeight": "320px"},
+				style=BOTTOM_ROW,
 			),
 		],
 		gap="md",
@@ -632,7 +716,7 @@ def _right_panel():
 		# viewports this column overflows here and scrolls rather than squeezing
 		# the figure; the lower cards manage their own inner overflow (see
 		# _controls_panel / _table_panel).
-		style={"height": COL_HEIGHT, "overflowY": "auto", "overflowX": "hidden"},
+		style=COLUMN,
 	)
 
 
