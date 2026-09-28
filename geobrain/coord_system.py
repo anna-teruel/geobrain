@@ -67,6 +67,36 @@ def atlas_extent_mm(
 	return (volume_shape[_SLICE_AXIS[orientation]] - 1) * resolution_um / 1000.0
 
 
+def labelled_slice_bounds(
+	volume: np.ndarray,
+	chunk: int = 16,
+) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int]]:
+	"""
+	First and last slice index holding any labelled (non-zero) voxel, per
+	volume axis. Atlas volumes are often padded with empty space around the
+	brain; this is where the tissue actually is.
+
+	Works through the volume ``chunk`` slices at a time along axis 0, so
+	large atlases never need a full-size boolean mask.
+
+	Returns:
+	    ((lo, hi), (lo, hi), (lo, hi)) for axes 0, 1, 2 (AP, DV, LR).
+	    An all-empty axis gives (0, n - 1).
+	"""
+	hit = [np.zeros(n, dtype=bool) for n in volume.shape]
+	for start in range(0, volume.shape[0], chunk):
+		mask = volume[start : start + chunk] != 0
+		hit[0][start : start + chunk] = mask.any(axis=(1, 2))
+		hit[1] |= mask.any(axis=(0, 2))
+		hit[2] |= mask.any(axis=(0, 1))
+
+	def _bounds(h):
+		idx = np.flatnonzero(h)
+		return (int(idx[0]), int(idx[-1])) if idx.size else (0, len(h) - 1)
+
+	return tuple(_bounds(h) for h in hit)
+
+
 def atlas_range_mm_to_slice_indices(
 	start_mm: float,
 	end_mm: float,

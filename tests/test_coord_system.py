@@ -1,5 +1,6 @@
 """Tests for coordinate <-> slice-index conversions and range generation."""
 
+import numpy as np
 import pytest
 
 from geobrain.coord_system import (
@@ -183,3 +184,14 @@ def test_slice_axis_matches_get_slice_view():
 	from geobrain.coord_system import slice_axis
 
 	assert [slice_axis(o) for o in ("coronal", "horizontal", "sagittal")] == [0, 1, 2]
+
+
+def test_labelled_slice_bounds_ignores_empty_padding():
+	from geobrain.coord_system import labelled_slice_bounds
+
+	vol = np.zeros((40, 20, 30), dtype=np.uint32)
+	vol[5:9, 2:4, 10:25] = 7
+	vol[33, 15, 12] = 8
+	# chunk=16 so the tissue straddles chunk borders
+	assert labelled_slice_bounds(vol, chunk=16) == ((5, 33), (2, 15), (10, 24))
+	assert labelled_slice_bounds(np.zeros((3, 4, 5))) == ((0, 2), (0, 3), (0, 4))

@@ -8,6 +8,8 @@ from geobrain.colormaps import CUSTOM_COLORSCALES
 DEFAULT_SPECIES = "mouse"
 DEFAULT_ATLAS = "allen_mouse"
 DEFAULT_ATLAS_NAME = "allen_mouse_25um"
+# Start, end, step (mm relative to bregma) for atlases with a bregma reference.
+BREGMA_DEFAULT_RANGE = (-3.0, 3.0, 0.5)
 ORIENTATIONS = [
 	{"label": "Coronal", "value": "coronal"},
 	{"label": "Sagittal", "value": "sagittal"},
@@ -223,13 +225,26 @@ def _step2_geojson():
 				dmc.Group(
 					[
 						dmc.NumberInput(
-							id="geo-start", label="Start (mm)", value=-2.5, step=0.1, w="31%"
+							id="geo-start",
+							label="Start (mm)",
+							value=BREGMA_DEFAULT_RANGE[0],
+							step=0.1,
+							w="31%",
 						),
 						dmc.NumberInput(
-							id="geo-end", label="End (mm)", value=-1.5, step=0.1, w="31%"
+							id="geo-end",
+							label="End (mm)",
+							value=BREGMA_DEFAULT_RANGE[1],
+							step=0.1,
+							w="31%",
 						),
 						dmc.NumberInput(
-							id="geo-step", label="Step (mm)", value=0.5, min=0.0, step=0.05, w="31%"
+							id="geo-step",
+							label="Step (mm)",
+							value=BREGMA_DEFAULT_RANGE[2],
+							min=0.0,
+							step=0.05,
+							w="31%",
 						),
 					],
 					grow=True,

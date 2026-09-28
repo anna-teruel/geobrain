@@ -16,6 +16,7 @@ from dash import ClientsideFunction, Input, Output, State, dcc, no_update, set_p
 import geobrain
 from geobrain.app import cache, figure
 from geobrain.app.layout import (
+	BREGMA_DEFAULT_RANGE,
 	DEFAULT_ATLAS,
 	DEFAULT_ATLAS_NAME,
 	pick_option,
@@ -449,6 +450,7 @@ def register_callbacks(app) -> None:
 			structure_df = atlas.structure_df
 			voxel_size_um = atlas.voxel_size_um
 			species = atlas.species
+			tissue_bounds = geobrain.labelled_slice_bounds(volume)
 		except Exception as exc:  # download / disk / atlas errors
 			_notify(f"Could not load atlas: {exc}", "error")
 			return no_update, _status("Atlas load failed.", "red"), no_update
@@ -458,6 +460,7 @@ def register_callbacks(app) -> None:
 		cache.put(session_id, "voxel_size_um", voxel_size_um)
 		cache.put(session_id, "species", species)
 		cache.put(session_id, "atlas_name", atlas.name)
+		cache.put(session_id, "tissue_bounds", tissue_bounds)
 		status = f"Loaded {atlas.name} - volume {volume.shape}."
 		return session_id, _status(status, "green"), False
 
@@ -470,36 +473,34 @@ def register_callbacks(app) -> None:
 		Output("geo-step", "value"),
 		Input("session-store", "data"),
 		Input("orientation-select", "value"),
-		State("geo-start", "value"),
-		State("geo-end", "value"),
 		prevent_initial_call=True,
 	)
-	def update_slice_range_inputs(session_id, orientation, start_mm, end_mm):
+	def update_slice_range_inputs(session_id, orientation):
 		volume = cache.get(session_id, "volume")
 		species = cache.get(session_id, "species", "mouse")
-		if volume is None or geobrain.has_bregma(species):
-			hint = "Positions in mm relative to bregma." if volume is not None else ""
-			return "Start (mm)", "End (mm)", hint, no_update, no_update, no_update
+		if volume is None:
+			return "Start (mm)", "End (mm)", "", no_update, no_update, no_update
+		if geobrain.has_bregma(species):
+			# Reset too: the previous values may be mm-from-edge of another atlas.
+			hint = "Positions in mm relative to bregma."
+			return "Start (mm)", "End (mm)", hint, *BREGMA_DEFAULT_RANGE
 
-		voxel = cache.get(session_id, "voxel_size_um", (25.0, 25.0, 25.0))
-		res = voxel[geobrain.slice_axis(orientation)]
+		axis = geobrain.slice_axis(orientation)
+		res = cache.get(session_id, "voxel_size_um", (25.0, 25.0, 25.0))[axis]
 		extent = geobrain.atlas_extent_mm(volume.shape, orientation, res)
+		lo, hi = cache.get(session_id, "tissue_bounds", ((0, volume.shape[axis] - 1),) * 3)[axis]
+		start, end = round(lo * res / 1000.0, 2), round(hi * res / 1000.0, 2)
 		atlas_name = cache.get(session_id, "atlas_name", "This atlas")
 		hint = (
 			f"{atlas_name} has no bregma reference: positions are mm from the first "
-			f"{orientation} slice (0 - {extent:.2f} mm)."
+			f"{orientation} slice (0 - {extent:.2f} mm); the brain spans "
+			f"{start:.2f} - {end:.2f} mm."
 		)
-		labels = ("Start (mm from edge)", "End (mm from edge)", hint)
-
-		def _inside(v):
-			return v is not None and 0 <= float(v) <= extent
-
-		if _inside(start_mm) and _inside(end_mm):
-			return *labels, no_update, no_update, no_update
-		# Current values are bregma-style or from another axis: default to
-		# ~10 slices across the whole volume.
-		step = max(round(extent / 10, 2), res / 1000.0)
-		return *labels, 0.0, round(extent, 2), step
+		# Always reset: this runs after loading an atlas or switching
+		# orientation, and in both cases the previous mm referred to another
+		# axis or atlas. Default to ~10 slices across the brain tissue.
+		step = max(round((end - start) / 10, 2), res / 1000.0)
+		return "Start (mm from edge)", "End (mm from edge)", hint, start, end, step
 
 	@app.callback(
 		Output("geometry-store", "data"),
