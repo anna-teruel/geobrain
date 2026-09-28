@@ -27,7 +27,7 @@ def _require_mouse(species: str) -> None:
 
 	Args:
 	    species : str
-	        Species identifier, e.g. from an AtlasProvider.
+	        Species identifier, e.g. from an Atlas.
 
 	Raises:
 	    ValueError

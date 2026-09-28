@@ -1,6 +1,6 @@
 """Tests for geobrain.brainglobe_atlas, geobrain.io.load_atlas and species handling downstream of it.
 
-BrainGlobeAtlas is replaced by an in-memory fake so nothing is downloaded.
+brainglobe_atlasapi's BrainGlobeAtlas is replaced by an in-memory fake so nothing is downloaded.
 """
 
 import json
@@ -11,7 +11,7 @@ import pytest
 
 import geobrain.brainglobe_atlas as atlas_module
 from geobrain.app import figure
-from geobrain.brainglobe_atlas import BrainGlobeProvider
+from geobrain.brainglobe_atlas import BrainGlobeAtlas
 from geobrain.build_geoJSON import build_geojson
 from geobrain.io import load_atlas
 
@@ -62,22 +62,22 @@ def _fake_atlas(
 
 @pytest.fixture
 def use_fake_atlas(monkeypatch):
-	"""Patch BrainGlobeAtlas; call the returned function with _fake_atlas kwargs."""
+	"""Patch brainglobe_atlasapi's BrainGlobeAtlas; call the returned function with _fake_atlas kwargs."""
 
 	def install(**kwargs):
 		fake = _fake_atlas(**kwargs)
-		monkeypatch.setattr(atlas_module, "BrainGlobeAtlas", lambda name: fake)
+		monkeypatch.setattr(atlas_module, "_BGAtlas", lambda name: fake)
 		return fake
 
 	return install
 
 
-# --- BrainGlobeProvider -----------------------------------------------------
+# --- BrainGlobeAtlas -----------------------------------------------------
 
 
 def test_structure_df_schema_and_values(use_fake_atlas):
 	use_fake_atlas()
-	df = BrainGlobeProvider("fake_mouse_25um").structure_df
+	df = BrainGlobeAtlas("fake_mouse_25um").structure_df
 
 	assert list(df.columns) == [
 		"id",
@@ -99,7 +99,7 @@ def test_structure_df_schema_and_values(use_fake_atlas):
 def test_structure_df_serializes_to_valid_json(use_fake_atlas):
 	# NaN would be written as a bare `NaN` token, which is not valid JSON.
 	use_fake_atlas()
-	records = BrainGlobeProvider("fake_mouse_25um").structure_df.to_dict(orient="records")
+	records = BrainGlobeAtlas("fake_mouse_25um").structure_df.to_dict(orient="records")
 	json.loads(json.dumps(records, allow_nan=False))
 
 
@@ -109,36 +109,26 @@ def test_structure_df_serializes_to_valid_json(use_fake_atlas):
 )
 def test_species_maps_to_common_name(use_fake_atlas, species, expected):
 	use_fake_atlas(species=species)
-	assert BrainGlobeProvider("fake").species == expected
+	assert BrainGlobeAtlas("fake").species == expected
 
 
 def test_name_and_resolution(use_fake_atlas):
 	use_fake_atlas(name="allen_mouse_25um")
-	provider = load_atlas("allen_mouse_25um")
-	assert provider.name == "allen_mouse_25um"
-	assert provider.resolution_um == 25.0
+	atlas = load_atlas("allen_mouse_25um")
+	assert atlas.name == "allen_mouse_25um"
+	assert atlas.resolution_um == 25.0
 
 
 def test_non_isotropic_resolution_raises(use_fake_atlas):
 	use_fake_atlas(resolution=(25.0, 25.0, 50.0))
 	with pytest.raises(ValueError, match="Non-isotropic"):
-		BrainGlobeProvider("fake").resolution_um
+		BrainGlobeAtlas("fake").resolution_um
 
 
 def test_non_asr_origin_raises(use_fake_atlas):
 	use_fake_atlas(origin=("l", "s", "a"))
-	with pytest.raises(ValueError, match="expects 'asr'"):
-		BrainGlobeProvider("fake")
-
-
-def test_axis_matches_get_slice_view_convention(use_fake_atlas):
-	use_fake_atlas()
-	provider = BrainGlobeProvider("fake")
-	assert provider.axis("coronal") == 0
-	assert provider.axis("horizontal") == 1
-	assert provider.axis("sagittal") == 2
-	with pytest.raises(ValueError, match="Unknown orientation"):
-		provider.axis("oblique")
+	with pytest.raises(ValueError, match="standard 'asr'"):
+		BrainGlobeAtlas("fake")
 
 
 # --- species downstream: build_geojson / build_slice_geometry ---------------
@@ -146,7 +136,7 @@ def test_axis_matches_get_slice_view_convention(use_fake_atlas):
 
 def test_build_geojson_from_non_mouse_atlas_by_index(use_fake_atlas, synthetic_volume):
 	use_fake_atlas(species="Homo sapiens", annotation=synthetic_volume)
-	atlas = BrainGlobeProvider("fake_human")
+	atlas = BrainGlobeAtlas("fake_human")
 	geojson = build_geojson(
 		volume=atlas.annotation,
 		structure_df=atlas.structure_df,

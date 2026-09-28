@@ -9,12 +9,12 @@ import os
 import pandas as pd
 import plotly.graph_objects as go
 
-from geobrain.brainglobe_atlas import BrainGlobeProvider
+from geobrain.brainglobe_atlas import BrainGlobeAtlas
 
 
 def load_atlas(
 	atlas_name: str = "allen_mouse_25um",
-) -> BrainGlobeProvider:
+) -> BrainGlobeAtlas:
 	"""
 	Load a BrainGlobe atlas.
 
@@ -29,7 +29,7 @@ def load_atlas(
 	        load_structure_graph().
 
 	Returns:
-	    BrainGlobeProvider
+	    BrainGlobeAtlas
 	        Atlas exposing annotation, structure_df, resolution_um and
 	        species for build_geojson().
 
@@ -44,7 +44,7 @@ def load_atlas(
 	    ...     coords_mm=[-2.0],
 	    ... )
 	"""
-	return BrainGlobeProvider(atlas_name)
+	return BrainGlobeAtlas(atlas_name)
 
 
 def load_score(

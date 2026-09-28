@@ -8,23 +8,11 @@ from functools import cached_property, lru_cache
 
 import numpy as np
 import pandas as pd
-from brainglobe_atlasapi import BrainGlobeAtlas, list_atlases
 
-from geobrain.coord_system import Orientation
-
-# Anatomical-direction letters (per brainglobe_space.AnatomicalSpace's
-# origin string) that identify which physical axis a given orientation
-# slices along.
-_ANATOMICAL_LETTERS_BY_ORIENTATION: dict[Orientation, set[str]] = {
-	"coronal": {"a", "p"},
-	"sagittal": {"l", "r"},
-	"horizontal": {"s", "i"},
-}
-
-# Axis order GeoBrain's slicing (get_slice_view) and screen mapping
-# (app.figure._screen_xy) assume: axis 0 = AP, axis 1 = DV, axis 2 = LR.
-# This is the Allen CCF order and BrainGlobe's v3 ATLAS_ORIENTATION.
-GEOBRAIN_ORIGIN = ("a", "s", "r")
+# Aliased: GeoBrain's own BrainGlobeAtlas (below) wraps this class.
+from brainglobe_atlasapi import BrainGlobeAtlas as _BGAtlas
+from brainglobe_atlasapi import list_atlases
+from brainglobe_atlasapi.descriptors import ATLAS_ORIENTATION
 
 # BrainGlobe metadata stores the binomial name; GeoBrain's coordinate
 # system (coord_system._require_mouse) uses common names.
@@ -120,7 +108,7 @@ def list_available_atlases() -> pd.DataFrame:
 	return df.sort_values(["species", "atlas", "resolution_um"], ignore_index=True)
 
 
-class AtlasProvider(ABC):
+class Atlas(ABC):
 	"""
 	Adapts one atlas source into the data shape GeoBrain's slice-building
 	pipeline expects.
@@ -138,8 +126,10 @@ class AtlasProvider(ABC):
 	        parent_structure_id, structure_id_path, color_hex_triplet].
 	    resolution_um : float
 	        Isotropic voxel size in microns.
-	    axis(orientation) : int
-	        Array axis to index for a given slicing orientation.
+
+	The annotation volume must use BrainGlobe's standard axis order
+	(ATLAS_ORIENTATION, "asr": axis 0 = AP, axis 1 = DV, axis 2 = LR),
+	which is what get_slice_view and app.figure._screen_xy index by.
 	"""
 
 	@property
@@ -162,13 +152,10 @@ class AtlasProvider(ABC):
 	@abstractmethod
 	def resolution_um(self) -> float: ...
 
-	@abstractmethod
-	def axis(self, orientation: Orientation) -> int: ...
 
-
-class BrainGlobeProvider(AtlasProvider):
+class BrainGlobeAtlas(Atlas):
 	"""
-	AtlasProvider backed by `brainglobe_atlasapi.BrainGlobeAtlas`.
+	Atlas backed by `brainglobe_atlasapi.BrainGlobeAtlas`.
 
 	Args:
 	    atlas_name : str
@@ -178,18 +165,19 @@ class BrainGlobeProvider(AtlasProvider):
 
 	Raises:
 	    ValueError
-	        If the atlas is not stored in GeoBrain's expected "asr" axis
-	        order (see GEOBRAIN_ORIGIN).
+	        If the atlas is not in BrainGlobe's standard axis order
+	        (ATLAS_ORIENTATION). Every BrainGlobe v3 atlas is, so this only
+	        guards against custom atlases or a future BrainGlobe change.
 	"""
 
 	def __init__(self, atlas_name: str) -> None:
-		self._atlas = BrainGlobeAtlas(atlas_name)
+		self._atlas = _BGAtlas(atlas_name)
 
-		origin = tuple(self._atlas.space.origin)
-		if origin != GEOBRAIN_ORIGIN:
+		origin = "".join(self._atlas.space.origin)
+		if origin != ATLAS_ORIENTATION:
 			raise ValueError(
-				f"Atlas {atlas_name!r} has origin {''.join(origin)!r}; GeoBrain "
-				f"expects {''.join(GEOBRAIN_ORIGIN)!r} (AP, DV, LR axis order)."
+				f"Atlas {atlas_name!r} has origin {origin!r}; GeoBrain expects "
+				f"BrainGlobe's standard {ATLAS_ORIENTATION!r} (AP, DV, LR axis order)."
 			)
 
 	@property
@@ -265,32 +253,3 @@ class BrainGlobeProvider(AtlasProvider):
 		if len(set(resolution)) != 1:
 			raise ValueError(f"Non-isotropic atlas resolution {resolution} is not supported.")
 		return float(resolution[0])
-
-	def axis(self, orientation: Orientation) -> int:
-		"""
-		Resolve which annotation-volume axis to index for a given slicing
-		orientation, from the atlas's own anatomical space definition
-		(atlas.space.origin) rather than assuming a fixed axis order.
-
-		Args:
-		    orientation : {"coronal", "sagittal", "horizontal"}
-
-		Returns:
-		    int
-		        Array axis index.
-
-		Raises:
-		    ValueError
-		        If orientation is unknown, or no axis in the atlas's origin
-		        matches it.
-		"""
-		letters = _ANATOMICAL_LETTERS_BY_ORIENTATION.get(orientation)
-		if letters is None:
-			raise ValueError(f"Unknown orientation: {orientation}")
-
-		origin = self._atlas.space.origin
-		for axis_index, origin_letter in enumerate(origin):
-			if origin_letter in letters:
-				return axis_index
-
-		raise ValueError(f"Could not resolve a {orientation!r} axis from atlas origin {origin!r}.")

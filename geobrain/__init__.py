@@ -1,4 +1,4 @@
-from geobrain.brainglobe_atlas import AtlasProvider, BrainGlobeProvider, list_available_atlases
+from geobrain.brainglobe_atlas import Atlas, BrainGlobeAtlas, list_available_atlases
 from geobrain.build_geoJSON import (
 	ANNOTATION_URLS,
 	STRUCTURE_GRAPH_URL,
@@ -41,8 +41,8 @@ from geobrain.scores import (
 from geobrain.types import ReferenceMode, RelAbundanceMethod, ScoreName
 
 __all__ = [
-	"AtlasProvider",
-	"BrainGlobeProvider",
+	"Atlas",
+	"BrainGlobeAtlas",
 	"list_available_atlases",
 	"load_atlas",
 	"ANNOTATION_URLS",

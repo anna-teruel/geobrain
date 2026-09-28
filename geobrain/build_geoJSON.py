@@ -586,7 +586,7 @@ def build_geojson(
 	    resolution_um : int, default=25
 	        Atlas voxel resolution in microns.
 	    species : str, default="mouse"
-	        Atlas species, e.g. ``AtlasProvider.species``. Bregma-relative
+	        Atlas species, e.g. ``Atlas.species``. Bregma-relative
 	        coordinates (coords_mm, start_mm/end_mm) are only supported for
 	        "mouse"; other species must select slices with slice_indices, and
 	        their features get ``coordinate_mm=None``.
