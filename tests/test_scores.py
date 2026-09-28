@@ -21,6 +21,7 @@ from geobrain.scores import (
 
 # --- filename parsing -------------------------------------------------------
 
+
 @pytest.mark.parametrize(
 	"filename, expected",
 	[
@@ -35,9 +36,13 @@ def test_find_animal_id(filename, expected):
 
 # --- loading ----------------------------------------------------------------
 
-def test_load_refatlas_regions_excludes_background_and_root(quint_dir):
+
+def test_load_refatlas_regions_keeps_background_and_root(quint_dir):
+	# GeoBrain no longer excludes any region by ID (see issue #40 discussion):
+	# root/background aren't universal across atlases, so filtering is left
+	# to the caller instead of being hardcoded here.
 	df = load_refatlas_regions(quint_dir)
-	assert {0, 997}.isdisjoint(set(df["Region ID"].dropna().tolist()))
+	assert {0, 997}.issubset(set(df["Region ID"].dropna().tolist()))
 	assert "animal" in df.columns
 	assert set(df["animal"]) == {"A1", "A2", "A3", "A4"}
 
@@ -50,6 +55,7 @@ def test_load_refatlas_regions_no_files_raises(tmp_path):
 
 
 # --- aggregation ------------------------------------------------------------
+
 
 def test_compute_animal_region_counts_sums_duplicates(quint_dir):
 	df = load_refatlas_regions(quint_dir)
@@ -68,6 +74,7 @@ def test_compute_region_counts(region_by_subject):
 
 
 # --- relative abundance -----------------------------------------------------
+
 
 def test_relative_abundance_within(region_by_subject):
 	out = relative_abundance(region_by_subject, method="within")
@@ -99,6 +106,7 @@ def test_relative_abundance_invalid_method(region_by_subject):
 
 
 # --- reference stats --------------------------------------------------------
+
 
 def test_compute_reference_stats(region_by_subject):
 	stats = compute_reference_stats(region_by_subject)
@@ -133,6 +141,7 @@ def test_compute_reference_stats_zero_std_raises():
 
 # --- frequency / consistency ------------------------------------------------
 
+
 def test_consistency_score_frequency(region_by_subject):
 	out = consistency_score(region_by_subject)
 	freq = dict(zip(out["Region ID"], out["frequency"]))
@@ -143,6 +152,7 @@ def test_consistency_score_frequency(region_by_subject):
 
 
 # --- density ----------------------------------------------------------------
+
 
 def test_density_score(region_by_subject):
 	out = density_score(region_by_subject)
@@ -164,12 +174,13 @@ def test_density_score_zero_area_is_na():
 
 # --- score_table integration ------------------------------------------------
 
+
 def test_score_table_ungrouped_has_all_score_columns(quint_dir):
 	out = score_table(quint_dir)
 	for col in ("relative_abundance_z", "frequency", "density"):
 		assert col in out.columns
 	assert "group_label" not in out.columns
-	assert set(out["Region ID"].dropna()) == {315, 672}
+	assert set(out["Region ID"].dropna()) == {0, 315, 672, 997}
 
 
 def test_score_table_subset_of_scores(quint_dir):
@@ -225,6 +236,7 @@ def test_score_table_reference_group_missing_raises(quint_dir, metadata_csv):
 
 # --- save_scores ------------------------------------------------------------
 
+
 def test_save_scores_writes_table_matching_score_table(quint_dir, tmp_path):
 	out_path = tmp_path / "nested" / "scores.csv"  # nested dir must be created
 	returned = save_scores(quint_dir, str(out_path), scores=["density"])
@@ -234,4 +246,4 @@ def test_save_scores_writes_table_matching_score_table(quint_dir, tmp_path):
 	# The returned table equals score_table(), and the file is its serialization.
 	expected = score_table(quint_dir, scores=["density"])
 	pd.testing.assert_frame_equal(returned.reset_index(drop=True), expected.reset_index(drop=True))
-	assert set(reloaded["Region ID"].dropna()) == {315, 672}
+	assert set(reloaded["Region ID"].dropna()) == {0, 315, 672, 997}

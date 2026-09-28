@@ -15,6 +15,14 @@ from dash import ClientsideFunction, Input, Output, State, dcc, no_update, set_p
 
 import geobrain
 from geobrain.app import cache, figure
+from geobrain.app.layout import (
+	BREGMA_DEFAULT_RANGE,
+	DEFAULT_ATLAS,
+	DEFAULT_ATLAS_NAME,
+	pick_option,
+	atlas_options,
+	resolution_options,
+)
 
 
 # Toast levels -> (Mantine color used for the border + icon box, default title,
@@ -397,6 +405,26 @@ def register_callbacks(app) -> None:
 		return _browse_path(directory=True)
 
 	@app.callback(
+		Output("atlas-select", "data"),
+		Output("atlas-select", "value"),
+		Input("species-select", "value"),
+		prevent_initial_call=True,
+	)
+	def update_atlas_options(species):
+		options = atlas_options(geobrain.list_available_atlases(), species)
+		return options, pick_option(options, DEFAULT_ATLAS)
+
+	@app.callback(
+		Output("resolution-select", "data"),
+		Output("resolution-select", "value"),
+		Input("atlas-select", "value"),
+		prevent_initial_call=True,
+	)
+	def update_resolution_options(atlas):
+		options = resolution_options(geobrain.list_available_atlases(), atlas)
+		return options, pick_option(options, DEFAULT_ATLAS_NAME)
+
+	@app.callback(
 		Output("session-store", "data"),
 		Output("step1-status", "children"),
 		Output("build-geo-btn", "disabled"),
@@ -409,20 +437,70 @@ def register_callbacks(app) -> None:
 		],
 		prevent_initial_call=True,
 	)
-	def load_raw(n_clicks, resolution):
-		res = int(resolution)
+	def load_raw(n_clicks, atlas_name):
+		if not atlas_name:
+			_notify("Pick an atlas and resolution first.", "warning")
+			return no_update, no_update, no_update
 		try:
 			session_id = cache.new_session()
-			volume = geobrain.load_annotation_volume(resolution_um=res)
-			structure_df = geobrain.load_structure_graph()
+			# BrainGlobe caches the atlas under ~/.brainglobe, so only the
+			# first load of an atlas downloads anything.
+			atlas = geobrain.load_atlas(atlas_name)
+			volume = atlas.annotation
+			structure_df = atlas.structure_df
+			voxel_size_um = atlas.voxel_size_um
+			species = atlas.species
+			tissue_bounds = geobrain.labelled_slice_bounds(volume)
 		except Exception as exc:  # download / disk / atlas errors
 			_notify(f"Could not load atlas: {exc}", "error")
 			return no_update, _status("Atlas load failed.", "red"), no_update
 		cache.put(session_id, "volume", volume)
 		cache.put(session_id, "structure_df", structure_df)
-		cache.put(session_id, "resolution_um", res)
-		status = f"Loaded atlas at {res} µm - volume {volume.shape}."
+		# Per axis (AP, DV, LR): some atlases have anisotropic voxels.
+		cache.put(session_id, "voxel_size_um", voxel_size_um)
+		cache.put(session_id, "species", species)
+		cache.put(session_id, "atlas_name", atlas.name)
+		cache.put(session_id, "tissue_bounds", tissue_bounds)
+		status = f"Loaded {atlas.name} - volume {volume.shape}."
 		return session_id, _status(status, "green"), False
+
+	@app.callback(
+		Output("geo-start", "label"),
+		Output("geo-end", "label"),
+		Output("geo-range-hint", "children"),
+		Output("geo-start", "value"),
+		Output("geo-end", "value"),
+		Output("geo-step", "value"),
+		Input("session-store", "data"),
+		Input("orientation-select", "value"),
+		prevent_initial_call=True,
+	)
+	def update_slice_range_inputs(session_id, orientation):
+		volume = cache.get(session_id, "volume")
+		species = cache.get(session_id, "species", "mouse")
+		if volume is None:
+			return "Start (mm)", "End (mm)", "", no_update, no_update, no_update
+		if geobrain.has_bregma(species):
+			# Reset too: the previous values may be mm-from-edge of another atlas.
+			hint = "Positions in mm relative to bregma."
+			return "Start (mm)", "End (mm)", hint, *BREGMA_DEFAULT_RANGE
+
+		axis = geobrain.slice_axis(orientation)
+		res = cache.get(session_id, "voxel_size_um", (25.0, 25.0, 25.0))[axis]
+		extent = geobrain.atlas_extent_mm(volume.shape, orientation, res)
+		lo, hi = cache.get(session_id, "tissue_bounds", ((0, volume.shape[axis] - 1),) * 3)[axis]
+		start, end = round(lo * res / 1000.0, 2), round(hi * res / 1000.0, 2)
+		atlas_name = cache.get(session_id, "atlas_name", "This atlas")
+		hint = (
+			f"{atlas_name} has no bregma reference: positions are mm from the first "
+			f"{orientation} slice (0 - {extent:.2f} mm); the brain spans "
+			f"{start:.2f} - {end:.2f} mm."
+		)
+		# Always reset: this runs after loading an atlas or switching
+		# orientation, and in both cases the previous mm referred to another
+		# axis or atlas. Default to ~10 slices across the brain tissue.
+		step = max(round((end - start) / 10, 2), res / 1000.0)
+		return "Start (mm from edge)", "End (mm from edge)", hint, start, end, step
 
 	@app.callback(
 		Output("geometry-store", "data"),
@@ -466,16 +544,32 @@ def register_callbacks(app) -> None:
 			_notify("Load the atlas first (step 1).", "warning")
 			return no_update, no_update, no_update, no_update, no_update, no_update
 
-		res = int(cache.get(session_id, "resolution_um", 25))
+		voxel = cache.get(session_id, "voxel_size_um", (25.0, 25.0, 25.0))
+		# Voxel size along the slicing axis: the only one that turns mm into
+		# slice indices (and the only one there is for isotropic atlases).
+		res = voxel[geobrain.slice_axis(orientation)]
+		species = cache.get(session_id, "species", "mouse")
 		step = float(step_mm) if step_mm else None
 		try:
-			indices = geobrain.range_mm_to_slice_indices(
-				start_mm=float(start_mm),
-				end_mm=float(end_mm),
-				step_mm=step,
-				orientation=orientation,
-				resolution_um=res,
-			)
+			if geobrain.has_bregma(species):
+				indices = geobrain.range_mm_to_slice_indices(
+					start_mm=float(start_mm),
+					end_mm=float(end_mm),
+					step_mm=step,
+					orientation=orientation,
+					resolution_um=res,
+					species=species,
+				)
+			else:
+				# No bregma for this species: mm are measured from the first slice.
+				indices = geobrain.atlas_range_mm_to_slice_indices(
+					start_mm=float(start_mm),
+					end_mm=float(end_mm),
+					volume_shape=volume.shape,
+					step_mm=step,
+					orientation=orientation,
+					resolution_um=res,
+				)
 		except Exception as exc:
 			set_progress((0, _status(f"Invalid slice range: {exc}", "red")))
 			_notify(f"Invalid slice range: {exc}", "error")
@@ -502,6 +596,8 @@ def register_callbacks(app) -> None:
 				smooth_sigma=float(smooth_sigma),
 				polygon_mode=polygon_mode,
 				progress=_report,
+				species=species,
+				voxel_size_um=voxel,
 			)
 		except Exception as exc:
 			set_progress((0, _status(f"Could not build slices: {exc}", "red")))

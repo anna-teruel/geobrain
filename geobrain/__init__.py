@@ -1,13 +1,9 @@
+from geobrain.brainglobe_atlas import Atlas, BrainGlobeAtlas, list_available_atlases
 from geobrain.build_geoJSON import (
-	ANNOTATION_URLS,
-	STRUCTURE_GRAPH_URL,
 	BuildConfig,
 	build_geojson,
 	clean_polygons_geometry,
-	download_bytes,
 	get_slice_view,
-	load_annotation_volume,
-	load_structure_graph,
 	mask_to_polygon,
 	save_geojson,
 	scale_cartesian_to_lonlat,
@@ -15,12 +11,19 @@ from geobrain.build_geoJSON import (
 from geobrain.choropleth_render import render_brain_slice
 from geobrain.coord_system import (
 	CCFConfig,
+	atlas_extent_mm,
+	atlas_range_mm_to_slice_indices,
 	coord_mm_to_slice_index,
+	has_bregma,
+	labelled_slice_bounds,
+	pixel_scale,
 	get_ccf_config,
 	range_mm_to_slice_indices,
+	slice_axis,
 	slice_index_to_coordinate_mm,
+	slice_plane_axes,
 )
-from geobrain.io import load_geojson, load_score, save_figure
+from geobrain.io import load_atlas, load_geojson, load_score, save_figure
 from geobrain.metadata import MetadataConfig
 from geobrain.scores import (
 	compute_animal_region_counts,
@@ -37,23 +40,29 @@ from geobrain.scores import (
 from geobrain.types import ReferenceMode, RelAbundanceMethod, ScoreName
 
 __all__ = [
-	"ANNOTATION_URLS",
-	"STRUCTURE_GRAPH_URL",
+	"Atlas",
+	"BrainGlobeAtlas",
+	"list_available_atlases",
+	"load_atlas",
 	"BuildConfig",
 	"build_geojson",
 	"clean_polygons_geometry",
-	"download_bytes",
 	"get_slice_view",
-	"load_annotation_volume",
-	"load_structure_graph",
 	"mask_to_polygon",
 	"save_geojson",
 	"scale_cartesian_to_lonlat",
 	"render_brain_slice",
 	"CCFConfig",
+	"atlas_extent_mm",
+	"atlas_range_mm_to_slice_indices",
 	"coord_mm_to_slice_index",
+	"has_bregma",
+	"labelled_slice_bounds",
+	"pixel_scale",
 	"get_ccf_config",
 	"range_mm_to_slice_indices",
+	"slice_axis",
+	"slice_plane_axes",
 	"slice_index_to_coordinate_mm",
 	"load_geojson",
 	"load_score",

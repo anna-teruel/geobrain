@@ -1,5 +1,6 @@
 """Tests for coordinate <-> slice-index conversions and range generation."""
 
+import numpy as np
 import pytest
 
 from geobrain.coord_system import (
@@ -147,3 +148,63 @@ def test_species_guard_propagates_to_public_api(func, kwargs):
 	# than silently defaulting to "mouse" internally.
 	with pytest.raises(ValueError):
 		func(species="human", **kwargs)
+
+
+def test_has_bregma_only_for_mouse():
+	from geobrain.coord_system import has_bregma
+
+	assert has_bregma("mouse") and has_bregma("Mouse")
+	assert not has_bregma("Homo sapiens")
+
+
+def test_atlas_range_mm_to_slice_indices():
+	from geobrain.coord_system import atlas_extent_mm, atlas_range_mm_to_slice_indices
+
+	shape = (40, 30, 20)  # coronal 40, horizontal 30, sagittal 20 slices
+	assert atlas_extent_mm(shape, "coronal", 500) == 19.5
+	assert atlas_extent_mm(shape, "sagittal", 500) == 9.5
+
+	# every slice when no step; ends in either order
+	assert atlas_range_mm_to_slice_indices(2.0, 0.0, shape, resolution_um=500) == [0, 1, 2, 3, 4]
+	assert atlas_range_mm_to_slice_indices(0.0, 5.0, shape, step_mm=2.5, resolution_um=500) == [
+		0,
+		5,
+		10,
+	]
+	# positions outside the volume are dropped, not clipped
+	assert atlas_range_mm_to_slice_indices(
+		8.0, 12.0, shape, step_mm=1.0, orientation="sagittal", resolution_um=500
+	) == [16, 18]
+	assert atlas_range_mm_to_slice_indices(-3.0, -1.0, shape, resolution_um=500) == []
+	with pytest.raises(ValueError):
+		atlas_range_mm_to_slice_indices(0.0, 1.0, shape, step_mm=0, resolution_um=500)
+
+
+def test_slice_axis_matches_get_slice_view():
+	from geobrain.coord_system import slice_axis
+
+	assert [slice_axis(o) for o in ("coronal", "horizontal", "sagittal")] == [0, 1, 2]
+
+
+def test_labelled_slice_bounds_ignores_empty_padding():
+	from geobrain.coord_system import labelled_slice_bounds
+
+	vol = np.zeros((40, 20, 30), dtype=np.uint32)
+	vol[5:9, 2:4, 10:25] = 7
+	vol[33, 15, 12] = 8
+	# chunk=16 so the tissue straddles chunk borders
+	assert labelled_slice_bounds(vol, chunk=16) == ((5, 33), (2, 15), (10, 24))
+	assert labelled_slice_bounds(np.zeros((3, 4, 5))) == ((0, 2), (0, 3), (0, 4))
+
+
+def test_pixel_scale_and_plane_axes():
+	from geobrain.coord_system import pixel_scale, slice_plane_axes
+
+	assert slice_plane_axes("coronal") == (1, 2)
+	assert slice_plane_axes("horizontal") == (0, 2)
+	assert slice_plane_axes("sagittal") == (0, 1)
+	voxel = (2.542, 1.2407, 1.2407)  # kocher_bumblebee_2.542um
+	assert pixel_scale("coronal", voxel) == (1.0, 1.0)
+	assert pixel_scale("horizontal", voxel) == pytest.approx((1.0, 2.542 / 1.2407))
+	assert pixel_scale("sagittal", voxel) == pytest.approx((1.0, 2.542 / 1.2407))
+	assert pixel_scale("coronal", (25.0, 25.0, 25.0)) == (1.0, 1.0)

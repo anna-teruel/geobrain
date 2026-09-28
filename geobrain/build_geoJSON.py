@@ -1,40 +1,29 @@
 """
-Build selected per-slice GeoJSON polygons from the Allen CCF annotation volume.
+Build selected per-slice GeoJSON polygons from an atlas annotation volume.
 """
 
-import io
 import json
 import os
 from dataclasses import dataclass
 from typing import Literal
 
-import nrrd
 import numpy as np
 import pandas as pd
-import requests
 from rasterio.features import shapes
 from scipy.ndimage import gaussian_filter
 from skimage import measure
+from shapely.affinity import scale as scale_geometry
 from shapely.geometry import MultiPolygon, Polygon, mapping, shape
 from shapely.ops import unary_union
 from tqdm.auto import tqdm
 
 from geobrain.coord_system import (
 	coord_mm_to_slice_index,
+	pixel_scale,
 	range_mm_to_slice_indices,
+	slice_axis,
 	slice_index_to_coordinate_mm,
 )
-
-# Allen annotation volumes at different isotropic resolutions (microns)
-ANNOTATION_URLS = {
-	10: "https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/annotation_10.nrrd",
-	25: "https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/annotation_25.nrrd",
-	50: "https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/annotation_50.nrrd",
-	100: "https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/annotation_100.nrrd",
-}
-
-# Allen ontology tree (Mouse Brain Atlas structure graph 1)
-STRUCTURE_GRAPH_URL = "https://api.brain-map.org/api/v2/structure_graph_download/1.json"
 
 
 @dataclass
@@ -52,9 +41,11 @@ class BuildConfig:
 	Args:
 	    out_dir : str
 	        Output directory where the final GeoJSON file is saved.
-	    resolution_um : int, default=25
-	        Allen annotation volume resolution in microns.
-	        Supported values are 10, 25, 50, and 100.
+	    resolution_um : float, default=25
+	        Isotropic atlas voxel size in microns, e.g. ``Atlas.resolution_um``.
+	    voxel_size_um : tuple[float, float, float] | None, default=None
+	        Per-axis voxel size (AP, DV, LR) for anisotropic atlases, e.g.
+	        ``Atlas.voxel_size_um``. Takes precedence over resolution_um.
 	    orientation : {"coronal", "sagittal", "horizontal"}, default="coronal"
 	        Slice orientation used to extract 2D views from the 3D annotation
 	        volume. Orientation determines which stereotaxic coordinate is used:
@@ -89,7 +80,8 @@ class BuildConfig:
 	"""
 
 	out_dir: str
-	resolution_um: int = 25
+	resolution_um: float = 25
+	voxel_size_um: tuple[float, float, float] | None = None
 	orientation: Literal["coronal", "sagittal", "horizontal"] = "coronal"
 
 	coords_mm: list[float] | None = None
@@ -102,113 +94,6 @@ class BuildConfig:
 	polygon_mode: Literal["raster", "contour"] = "contour"
 	smooth_sigma: float = 1.0
 	geojson_filename: str = "atlas_slices.geojson"
-
-
-def download_bytes(
-	url: str,
-) -> bytes:
-	"""
-	Download a remote annotation volume file into memory.
-
-	It will wait max 120s (2min) for the server to respond
-	before raising an error.
-
-	Args:
-	    url : str
-	        Remote file URL.
-
-	Returns:
-	    bytes
-	        Raw file contents.
-	"""
-	r = requests.get(url, timeout=120)
-	r.raise_for_status()
-	return r.content
-
-
-def load_annotation_volume(
-	resolution_um: int,
-) -> np.ndarray:
-	"""
-	Load an Allen CCF annotation volume into memory.
-
-	The annotation volume contains integer structure IDs for each voxel
-	in the Allen Common Coordinate Framework (CCF). The file is downloaded
-	from the Allen Institute URL and read directly from memory, without
-	saving the NRRD file to disk.
-
-	Args:
-	    resolution_um : int
-	        Atlas resolution in microns. Supported values are 10, 25, 50,
-	        and 100.
-
-	Returns:
-	    np.ndarray
-	        3D annotation volume of integer structure IDs.
-	"""
-	if resolution_um not in ANNOTATION_URLS:
-		raise ValueError(
-			f"Unsupported resolution_um={resolution_um}. Choose one of {sorted(ANNOTATION_URLS)}."
-		)
-
-	url = ANNOTATION_URLS[resolution_um]
-	raw = download_bytes(url)
-
-	memory_file = io.BytesIO(raw)
-	header = nrrd.read_header(memory_file)
-
-	volume = nrrd.read_data(
-		header,
-		memory_file,
-	)
-
-	return volume
-
-
-def load_structure_graph() -> pd.DataFrame:
-	"""
-	Load the Allen Brain Atlas structure ontology into memory
-	(STRUCTURE_GRAPH_URL).
-
-	The structure graph describes the hierarchical relationships between
-	brain regions and includes region IDs, names, acronyms, parent
-	structures, ontology paths, and Allen display colors.
-
-	The ontology JSON is downloaded from the Allen Institute API and read
-	directly from memory, without saving the JSON file to disk.
-
-	Returns:
-	    pandas.DataFrame
-	        Table containing structure metadata including region ID,
-	        acronym, name, parent structure ID, graph order, ontology path,
-	        and Allen color.
-	"""
-	raw = download_bytes(STRUCTURE_GRAPH_URL)
-	data = json.loads(raw.decode("utf-8"))
-
-	rows = []
-	stack = [(node, None) for node in reversed(data["msg"])]  # the json is not flat
-
-	while stack:
-		# process nodes until there are no more ontology nodes left
-		node, parent_id = stack.pop()
-		rows.append(
-			{
-				"id": int(node["id"]),
-				"acronym": node.get("acronym"),
-				"name": node.get("name"),
-				"parent_structure_id": parent_id,
-				"graph_order": node.get("graph_order"),
-				"structure_id_path": node.get("structure_id_path"),
-				"color_hex_triplet": node.get("color_hex_triplet"),
-			}
-		)
-
-		children = node.get("children", [])
-		for child in reversed(children):
-			stack.append((child, int(node["id"])))
-
-	return pd.DataFrame(rows)
 
 
 def get_slice_view(
@@ -437,6 +322,7 @@ def scale_cartesian_to_lonlat(
 	geojson_obj: dict,
 	lon_range: tuple[float, float] = (-15.0, 15.0),
 	lat_range: tuple[float, float] = (-10.0, 10.0),
+	keep_aspect: bool = True,
 ) -> dict:
 	"""
 	Convert GeoJSON polygon coordinates from atlas Cartesian pixel space [x, y]
@@ -456,6 +342,12 @@ def scale_cartesian_to_lonlat(
 	because atlas pixel coordinates increase downward while latitude increases
 	upward.
 
+	With keep_aspect=True (default), x and y share one scale factor, so the
+	geometry keeps its proportions: it fills lon_range or lat_range
+	(whichever is tighter) and is centred in the other. With
+	keep_aspect=False, x and y are stretched independently to fill both
+	ranges, which distorts slices whose shape differs from the ranges'.
+
 	Args:
 	    geojson_obj : dict
 	        GeoJSON FeatureCollection containing coordinates in atlas
@@ -464,6 +356,8 @@ def scale_cartesian_to_lonlat(
 	        Output longitude range used for min-max scaling.
 	    lat_range : tuple[float, float], default=(-10.0, 10.0)
 	        Output latitude range used for min-max scaling.
+	    keep_aspect : bool, default=True
+	        Use one scale factor for both axes so shapes are not distorted.
 
 	Returns:
 	    dict
@@ -508,25 +402,28 @@ def scale_cartesian_to_lonlat(
 	lon_min, lon_max = lon_range
 	lat_min, lat_max = lat_range
 
-	# Guard against a zero-extent axis (e.g. a single point or a sliver):
-	# a degenerate span maps every coordinate to the middle of the range
-	# instead of dividing by zero and producing NaN/inf.
 	x_span = xmax - xmin
 	y_span = ymax - ymin
+
+	# Scale factors (degrees per pixel). A zero-extent axis (e.g. a single
+	# point or a sliver) gets no factor of its own, so it maps to the middle of
+	# its range instead of dividing by zero and producing NaN/inf.
+	kx = (lon_max - lon_min) / x_span if x_span else None
+	ky = (lat_max - lat_min) / y_span if y_span else None
+	if keep_aspect:
+		factors = [k for k in (kx, ky) if k is not None]
+		kx = ky = min(factors) if factors else 0.0
+	kx, ky = kx or 0.0, ky or 0.0
+
+	x_mid, y_mid = (xmin + xmax) / 2, (ymin + ymax) / 2
+	lon_mid, lat_mid = (lon_min + lon_max) / 2, (lat_min + lat_max) / 2
 
 	for f in features:
 		geom = f["geometry"]
 		geom["coordinates"] = [
 			[
 				[
-					[
-						float(
-							lon_min + ((x - xmin) / x_span if x_span else 0.5) * (lon_max - lon_min)
-						),
-						float(
-							lat_max - ((y - ymin) / y_span if y_span else 0.5) * (lat_max - lat_min)
-						),
-					]
+					[float(lon_mid + (x - x_mid) * kx), float(lat_mid - (y - y_mid) * ky)]
 					for x, y in ring
 				]
 				for ring in polygon
@@ -541,7 +438,9 @@ def build_geojson(
 	volume: np.ndarray,
 	structure_df: pd.DataFrame,
 	orientation: str,
-	resolution_um: int = 25,
+	resolution_um: float = 25,
+	species: str = "mouse",
+	voxel_size_um: tuple[float, float, float] | None = None,
 	min_area_px: float = 5.0,
 	simplify_px: float = 0.8,
 	smooth_sigma: float = 1.0,
@@ -553,6 +452,7 @@ def build_geojson(
 	step_mm: float | None = None,
 	lon_range: tuple[float, float] = (-15.0, 15.0),
 	lat_range: tuple[float, float] = (-10.0, 10.0),
+	keep_aspect: bool = True,
 ) -> dict:
 	"""
 	Build one GeoJSON FeatureCollection from selected Allen atlas slices.
@@ -579,11 +479,21 @@ def build_geojson(
 	    volume : np.ndarray
 	        3D Allen CCF annotation volume containing integer structure IDs.
 	    structure_df : pd.DataFrame
-	        Allen ontology table returned by load_structure_graph().
+	        Ontology table, e.g. ``Atlas.structure_df`` from ``load_atlas()``.
 	    orientation : {"coronal", "sagittal", "horizontal"}
 	        Slice orientation used when extracting 2D views from the volume.
-	    resolution_um : int, default=25
-	        Atlas voxel resolution in microns.
+	    resolution_um : float, default=25
+	        Isotropic atlas voxel size in microns, e.g. ``Atlas.resolution_um``.
+	    species : str, default="mouse"
+	        Atlas species, e.g. ``Atlas.species``. Bregma-relative
+	        coordinates (coords_mm, start_mm/end_mm) are only supported for
+	        "mouse"; other species must select slices with slice_indices, and
+	        their features get ``coordinate_mm=None``.
+	    voxel_size_um : tuple[float, float, float] | None, default=None
+	        Per-axis voxel size (AP, DV, LR), e.g. ``Atlas.voxel_size_um``.
+	        Required for anisotropic atlases; takes precedence over
+	        resolution_um. Polygons are stretched by their in-plane voxel sizes
+	        so slices keep their true proportions.
 	    min_area_px : float, default=5.0
 	        Minimum polygon area in pixels. Smaller polygons are discarded.
 	    simplify_px : float, default=0.8
@@ -611,6 +521,9 @@ def build_geojson(
 	        Output longitude range used during coordinate scaling.
 	    lat_range : tuple[float, float], default=(-10.0, 10.0)
 	        Output latitude range used during coordinate scaling.
+	    keep_aspect : bool, default=True
+	        Keep the slice's proportions when scaling to lon/lat (see
+	        scale_cartesian_to_lonlat).
 
 	Returns:
 	    dict
@@ -673,6 +586,12 @@ def build_geojson(
 			"slice_indices, coords_mm, or start_mm/end_mm."
 		)
 
+	voxel = tuple(float(v) for v in (voxel_size_um or (resolution_um,) * 3))
+	# Voxel size along the slicing axis: the one that turns mm into slice
+	# indices (bregma coordinates are mouse-only, whose atlases are isotropic).
+	resolution_um = voxel[slice_axis(orientation)]
+	sx, sy = pixel_scale(orientation, voxel)
+
 	if slice_indices is not None:
 		pass
 
@@ -682,6 +601,7 @@ def build_geojson(
 				coord_mm=coord,
 				orientation=orientation,
 				resolution_um=resolution_um,
+				species=species,
 			)
 			for coord in coords_mm
 		]
@@ -693,6 +613,7 @@ def build_geojson(
 			step_mm=step_mm,
 			orientation=orientation,
 			resolution_um=resolution_um,
+			species=species,
 		)
 
 	id2row = structure_df.set_index("id").to_dict(orient="index")
@@ -701,11 +622,15 @@ def build_geojson(
 	for slice_index in tqdm(slice_indices, desc="Building GeoJSON slices"):
 		slice_img = get_slice_view(volume, slice_index, orientation)
 
-		coordinate_mm = slice_index_to_coordinate_mm(
-			slice_index=slice_index,
-			orientation=orientation,
-			resolution_um=resolution_um,
-		)  # we convert to mm for metadata
+		try:
+			coordinate_mm = slice_index_to_coordinate_mm(
+				slice_index=slice_index,
+				orientation=orientation,
+				resolution_um=resolution_um,
+				species=species,
+			)  # we convert to mm for metadata
+		except ValueError:  # no bregma for this species (see `_require_mouse`)
+			coordinate_mm = None
 
 		unique_ids = np.unique(slice_img)  # find allen region IDs inside the loaded slice
 		unique_ids = unique_ids[unique_ids != 0]  # exclude the background
@@ -723,6 +648,8 @@ def build_geojson(
 
 			if geom is None:
 				continue
+			if (sx, sy) != (1.0, 1.0):
+				geom = scale_geometry(geom, xfact=sx, yfact=sy, origin=(0, 0))
 
 			row = id2row.get(rid, {})
 
@@ -739,7 +666,8 @@ def build_geojson(
 						"slice_index": int(slice_index),
 						"coordinate_mm": coordinate_mm,
 						"orientation": orientation,
-						"resolution_um": int(resolution_um),
+						"resolution_um": resolution_um,
+						"voxel_size_um": list(voxel),
 					},
 					"geometry": mapping(geom),
 				}
@@ -754,6 +682,7 @@ def build_geojson(
 		geojson,
 		lon_range=lon_range,
 		lat_range=lat_range,
+		keep_aspect=keep_aspect,
 	)
 
 	return geojson

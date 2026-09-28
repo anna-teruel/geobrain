@@ -1,5 +1,5 @@
 """
-Utilities for loading score tables, GeoJSON files and saving
+Utilities for loading atlases, score tables, GeoJSON files and saving
 Plotly figures generated from region-level brain atlas analyses.
 """
 
@@ -8,6 +8,41 @@ import os
 
 import pandas as pd
 import plotly.graph_objects as go
+
+from geobrain.brainglobe_atlas import BrainGlobeAtlas
+
+
+def load_atlas(
+	atlas_name: str = "allen_mouse_25um",
+) -> BrainGlobeAtlas:
+	"""
+	Load a BrainGlobe atlas.
+
+	The atlas is downloaded into BrainGlobe's local cache (~/.brainglobe)
+	on first use and read from there afterwards.
+
+	Args:
+	    atlas_name : str, default="allen_mouse_25um"
+	        Any BrainGlobe atlas name (see `brainglobe list`), e.g. the
+	        Allen mouse atlases allen_mouse_{10,25,50,100}um.
+
+	Returns:
+	    BrainGlobeAtlas
+	        Atlas exposing annotation, structure_df, voxel_size_um and
+	        species for build_geojson().
+
+	Examples:
+	    >>> atlas = load_atlas("allen_mouse_25um")
+	    >>> geojson = build_geojson(
+	    ...     volume=atlas.annotation,
+	    ...     structure_df=atlas.structure_df,
+	    ...     voxel_size_um=atlas.voxel_size_um,
+	    ...     species=atlas.species,
+	    ...     orientation="coronal",
+	    ...     coords_mm=[-2.0],
+	    ... )
+	"""
+	return BrainGlobeAtlas(atlas_name)
 
 
 def load_score(

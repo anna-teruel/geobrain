@@ -13,12 +13,15 @@ def test_render_returns_figure(sample_geojson, score_df):
 	assert isinstance(fig, go.Figure)
 
 
-def test_render_excludes_default_ids(sample_geojson, score_df):
-	# sample_geojson includes region 997 (root); it must not reach the plot.
+def test_render_includes_all_regions(sample_geojson, score_df):
+	# GeoBrain no longer excludes any region by ID (see issue #40 discussion):
+	# root/background aren't universal across atlases, so region 997 (root),
+	# present in sample_geojson but absent from score_df, still reaches the
+	# plot as a NaN-scored feature via the left join.
 	fig = render_brain_slice(sample_geojson, score_df, value_col="density")
 	locations = list(fig.data[0].locations)
-	assert "1_997" not in locations
-	assert set(locations) == {"1_315", "1_672"}
+	assert "1_997" in locations
+	assert set(locations) == {"1_315", "1_672", "1_997"}
 
 
 def test_render_missing_feature_id_raises(sample_geojson, score_df):
@@ -31,11 +34,11 @@ def test_render_missing_feature_id_raises(sample_geojson, score_df):
 def test_render_handles_region_without_score(sample_geojson):
 	import pandas as pd
 
-	# Only region 315 has a score; 672 should survive as a NaN (left join).
+	# Only region 315 has a score; 672 and 997 should survive as NaN (left join).
 	partial = pd.DataFrame({"Region ID": [315], "density": [0.3]})
 	fig = render_brain_slice(sample_geojson, partial, value_col="density")
 	assert isinstance(fig, go.Figure)
-	assert set(fig.data[0].locations) == {"1_315", "1_672"}
+	assert set(fig.data[0].locations) == {"1_315", "1_672", "1_997"}
 
 
 def test_value_to_color_nan_returns_na_color():

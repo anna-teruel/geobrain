@@ -27,7 +27,7 @@ def _require_mouse(species: str) -> None:
 
 	Args:
 	    species : str
-	        Species identifier, e.g. from an AtlasProvider.
+	        Species identifier, e.g. from an Atlas.
 
 	Raises:
 	    ValueError
@@ -41,6 +41,130 @@ def _require_mouse(species: str) -> None:
 		)
 
 
+def has_bregma(species: str) -> bool:
+	"""Whether bregma-relative coordinates exist for ``species`` (mouse only)."""
+	return species.lower() == "mouse"
+
+
+# Volume axis perpendicular to each section plane (matches get_slice_view).
+_SLICE_AXIS = {"coronal": 0, "horizontal": 1, "sagittal": 2}
+
+
+def slice_axis(orientation: Orientation) -> int:
+	"""Volume axis perpendicular to ``orientation``'s section plane (AP=0, DV=1, LR=2)."""
+	return _SLICE_AXIS[orientation]
+
+
+# Volume axes along a slice's rows and columns (matches get_slice_view).
+_PLANE_AXES = {"coronal": (1, 2), "horizontal": (0, 2), "sagittal": (0, 1)}
+
+
+def slice_plane_axes(orientation: Orientation) -> tuple[int, int]:
+	"""Volume axes (row_axis, col_axis) of a 2D slice from get_slice_view."""
+	return _PLANE_AXES[orientation]
+
+
+def pixel_scale(
+	orientation: Orientation,
+	voxel_size_um: tuple[float, float, float],
+) -> tuple[float, float]:
+	"""
+	(x, y) factors that stretch a slice's pixel coordinates (x = column,
+	y = row) to true proportions, relative to the atlas's finest voxel size.
+	Both are 1.0 for isotropic atlases.
+	"""
+	row_axis, col_axis = _PLANE_AXES[orientation]
+	finest = min(voxel_size_um)
+	return voxel_size_um[col_axis] / finest, voxel_size_um[row_axis] / finest
+
+
+def atlas_extent_mm(
+	volume_shape: tuple[int, ...],
+	orientation: Orientation,
+	resolution_um: float,
+) -> float:
+	"""
+	Extent in mm of the volume along the axis sliced by ``orientation``,
+	i.e. the position of its last slice measured from its first one.
+	"""
+	return (volume_shape[_SLICE_AXIS[orientation]] - 1) * resolution_um / 1000.0
+
+
+def labelled_slice_bounds(
+	volume: np.ndarray,
+	chunk: int = 16,
+) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int]]:
+	"""
+	First and last slice index holding any labelled (non-zero) voxel, per
+	volume axis. Atlas volumes are often padded with empty space around the
+	brain; this is where the tissue actually is.
+
+	Works through the volume ``chunk`` slices at a time along axis 0, so
+	large atlases never need a full-size boolean mask.
+
+	Returns:
+	    ((lo, hi), (lo, hi), (lo, hi)) for axes 0, 1, 2 (AP, DV, LR).
+	    An all-empty axis gives (0, n - 1).
+	"""
+	hit = [np.zeros(n, dtype=bool) for n in volume.shape]
+	for start in range(0, volume.shape[0], chunk):
+		mask = volume[start : start + chunk] != 0
+		hit[0][start : start + chunk] = mask.any(axis=(1, 2))
+		hit[1] |= mask.any(axis=(0, 2))
+		hit[2] |= mask.any(axis=(0, 1))
+
+	def _bounds(h):
+		idx = np.flatnonzero(h)
+		return (int(idx[0]), int(idx[-1])) if idx.size else (0, len(h) - 1)
+
+	return tuple(_bounds(h) for h in hit)
+
+
+def atlas_range_mm_to_slice_indices(
+	start_mm: float,
+	end_mm: float,
+	volume_shape: tuple[int, ...],
+	step_mm: float | None = None,
+	orientation: Orientation = "coronal",
+	resolution_um: float = 25,
+) -> list[int]:
+	"""
+	Convert a range in mm measured from the atlas's first slice (index 0)
+	into slice indices. Species-agnostic alternative to
+	``range_mm_to_slice_indices`` for atlases without a bregma reference.
+
+	Args:
+	    start_mm, end_mm : float
+	        Range ends in mm from the first slice along the slicing axis.
+	    volume_shape : tuple[int, ...]
+	        Shape of the 3D annotation volume.
+	    step_mm : float | None
+	        Spacing in mm between sampled slices. If None, every slice in
+	        the range is returned.
+	    orientation : {"coronal", "sagittal", "horizontal"}, default="coronal"
+	    resolution_um : float, default=25
+	        Atlas voxel resolution in microns.
+
+	Returns:
+	    list[int]: Sorted unique slice indices inside the volume. Positions
+	    outside the volume are dropped, so the list can be empty.
+
+	Raises:
+	    ValueError: if step_mm is not positive.
+	"""
+	n_slices = volume_shape[_SLICE_AXIS[orientation]]
+	lo_mm, hi_mm = sorted((start_mm, end_mm))
+	if step_mm is None:
+		coords = np.arange(lo_mm, hi_mm + 1e-9, resolution_um / 1000.0)
+	elif step_mm <= 0:
+		raise ValueError("step_mm must be positive.")
+	else:
+		coords = np.arange(lo_mm, hi_mm + step_mm, step_mm)
+		coords = coords[coords <= hi_mm + 1e-9]
+	indices = {int(round(c * 1000.0 / resolution_um)) for c in coords}
+	return sorted(i for i in indices if 0 <= i < n_slices)
+
+
 @dataclass(frozen=True)
 class CCFConfig:
 	"""
@@ -48,8 +172,8 @@ class CCFConfig:
 
 	Args:
 	    resolution_um : int
-	        Isotropic voxel size in microns. This is directly related to which annotation volume we load
-	        from the ANNOTATION_URLS in build_polygons.py. Following values are accepted: 10, 25, 50, 100.
+	        Isotropic voxel size in microns, e.g. 10, 25, 50 or 100 for the
+	        Allen mouse atlases (allen_mouse_{res}um).
 	    bregma_ml_index : int
 	        Approximate mediolateral voxel index of bregma.
 	    bregma_dv_index : int

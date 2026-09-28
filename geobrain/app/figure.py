@@ -7,7 +7,7 @@ from plotly.colors import sample_colorscale
 from geobrain.build_geoJSON import get_slice_view, mask_to_polygon
 from geobrain.choropleth_render import value_to_color
 from geobrain.colormaps import resolve_name
-from geobrain.coord_system import slice_index_to_coordinate_mm
+from geobrain.coord_system import pixel_scale, slice_index_to_coordinate_mm
 
 SCORE_VALUE_COLUMN = {
 	"rel_abundance": "relative_abundance_z",
@@ -48,13 +48,15 @@ def build_slice_geometry(
 	volume: np.ndarray,
 	structure_df,
 	orientation: str,
-	resolution_um: int,
+	resolution_um: float,
 	slice_indices: list[int],
 	min_area_px: float = 5.0,
 	simplify_px: float = 0.8,
 	smooth_sigma: float = 1.0,
 	polygon_mode: str = "contour",
 	progress=None,
+	species: str = "mouse",
+	voxel_size_um: tuple[float, float, float] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 	"""Build undistorted, correctly-oriented pixel geometry for the given slices.
 
@@ -68,8 +70,17 @@ def build_slice_geometry(
 
 	``rings`` are exterior rings ``[[x, y], ...]`` in pixel/screen coordinates
 	(holes are dropped, matching ``plotly_render``). ``progress`` is an optional
-	``callable(i, n, slice_index)`` used to drive the progress bar.
+	``callable(i, n, slice_index)`` used to drive the progress bar. ``species``
+	decides whether slices get a bregma-relative ``coordinate_mm`` (mouse
+	only) or ``None``.
+
+	``voxel_size_um`` (AP, DV, LR) handles anisotropic atlases: rows and
+	columns are stretched by their voxel size relative to the finest axis, so
+	the slice keeps its true proportions on screen. Omitted, voxels are
+	treated as cubes.
 	"""
+	sx, sy = (1.0, 1.0) if voxel_size_um is None else pixel_scale(orientation, voxel_size_um)
+
 	id2row = structure_df.set_index("id").to_dict(orient="index")
 	by_slice: dict[str, list[dict[str, Any]]] = {}
 	slices_meta: list[dict[str, Any]] = []
@@ -80,9 +91,12 @@ def build_slice_geometry(
 		si = int(si)
 		slice_img = get_slice_view(volume, si, orientation)
 		n_rows, n_cols = slice_img.shape
-		dims = _screen_dims(orientation, n_rows, n_cols)
+		dims = _screen_dims(orientation, round(n_rows * sy), round(n_cols * sx))
 
-		coord_mm = slice_index_to_coordinate_mm(si, orientation, resolution_um)
+		try:
+			coord_mm = slice_index_to_coordinate_mm(si, orientation, resolution_um, species=species)
+		except ValueError:  # no bregma for this species (see _require_mouse)
+			coord_mm = None
 
 		regions: list[dict[str, Any]] = []
 		unique_ids = np.unique(slice_img)
@@ -104,8 +118,8 @@ def build_slice_geometry(
 			for poly in geom.geoms:
 				ring = []
 				for x, y in poly.exterior.coords:
-					sx, sy = _screen_xy(orientation, x, y)
-					ring.append([round(float(sx), 2), round(float(sy), 2)])
+					px, py = _screen_xy(orientation, x * sx, y * sy)
+					ring.append([round(float(px), 2), round(float(py), 2)])
 				if len(ring) >= 3:
 					rings.append(ring)
 			if not rings:
@@ -115,7 +129,12 @@ def build_slice_geometry(
 			regions.append({"rid": rid, "name": row.get("name") or str(rid), "rings": rings})
 
 		by_slice[str(si)] = regions
-		slices_meta.append({"slice_index": si, "coordinate_mm": round(float(coord_mm), 3)})
+		slices_meta.append(
+			{
+				"slice_index": si,
+				"coordinate_mm": None if coord_mm is None else round(float(coord_mm), 3),
+			}
+		)
 		if progress is not None:
 			progress(i, n, si)
 
