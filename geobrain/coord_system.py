@@ -114,8 +114,8 @@ class CCFConfig:
 
 	Args:
 	    resolution_um : int
-	        Isotropic voxel size in microns. This is directly related to which annotation volume we load
-	        from the ANNOTATION_URLS in build_polygons.py. Following values are accepted: 10, 25, 50, 100.
+	        Isotropic voxel size in microns, e.g. 10, 25, 50 or 100 for the
+	        Allen mouse atlases (allen_mouse_{res}um).
 	    bregma_ml_index : int
 	        Approximate mediolateral voxel index of bregma.
 	    bregma_dv_index : int

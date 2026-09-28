@@ -23,10 +23,8 @@ def load_atlas(
 
 	Args:
 	    atlas_name : str, default="allen_mouse_25um"
-	        Any BrainGlobe atlas name (see `brainglobe list`). The Allen
-	        mouse atlases (allen_mouse_{10,25,50,100}um) give the same
-	        volume and ontology as load_annotation_volume() /
-	        load_structure_graph().
+	        Any BrainGlobe atlas name (see `brainglobe list`), e.g. the
+	        Allen mouse atlases allen_mouse_{10,25,50,100}um.
 
 	Returns:
 	    BrainGlobeAtlas

@@ -31,8 +31,6 @@ dependencies = [
     "pandas",
     "scipy",
     "h5py",
-    "requests",
-    "pynrrd",
     "rasterio",
     "shapely",
     "scikit-image",

@@ -1,17 +1,14 @@
 """
-Build selected per-slice GeoJSON polygons from the Allen CCF annotation volume.
+Build selected per-slice GeoJSON polygons from an atlas annotation volume.
 """
 
-import io
 import json
 import os
 from dataclasses import dataclass
 from typing import Literal
 
-import nrrd
 import numpy as np
 import pandas as pd
-import requests
 from rasterio.features import shapes
 from scipy.ndimage import gaussian_filter
 from skimage import measure
@@ -24,17 +21,6 @@ from geobrain.coord_system import (
 	range_mm_to_slice_indices,
 	slice_index_to_coordinate_mm,
 )
-
-# Allen annotation volumes at different isotropic resolutions (microns)
-ANNOTATION_URLS = {
-	10: "https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/annotation_10.nrrd",
-	25: "https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/annotation_25.nrrd",
-	50: "https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/annotation_50.nrrd",
-	100: "https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/annotation_100.nrrd",
-}
-
-# Allen ontology tree (Mouse Brain Atlas structure graph 1)
-STRUCTURE_GRAPH_URL = "https://api.brain-map.org/api/v2/structure_graph_download/1.json"
 
 
 @dataclass
@@ -102,113 +88,6 @@ class BuildConfig:
 	polygon_mode: Literal["raster", "contour"] = "contour"
 	smooth_sigma: float = 1.0
 	geojson_filename: str = "atlas_slices.geojson"
-
-
-def download_bytes(
-	url: str,
-) -> bytes:
-	"""
-	Download a remote annotation volume file into memory.
-
-	It will wait max 120s (2min) for the server to respond
-	before raising an error.
-
-	Args:
-	    url : str
-	        Remote file URL.
-
-	Returns:
-	    bytes
-	        Raw file contents.
-	"""
-	r = requests.get(url, timeout=120)
-	r.raise_for_status()
-	return r.content
-
-
-def load_annotation_volume(
-	resolution_um: int,
-) -> np.ndarray:
-	"""
-	Load an Allen CCF annotation volume into memory.
-
-	The annotation volume contains integer structure IDs for each voxel
-	in the Allen Common Coordinate Framework (CCF). The file is downloaded
-	from the Allen Institute URL and read directly from memory, without
-	saving the NRRD file to disk.
-
-	Args:
-	    resolution_um : int
-	        Atlas resolution in microns. Supported values are 10, 25, 50,
-	        and 100.
-
-	Returns:
-	    np.ndarray
-	        3D annotation volume of integer structure IDs.
-	"""
-	if resolution_um not in ANNOTATION_URLS:
-		raise ValueError(
-			f"Unsupported resolution_um={resolution_um}. Choose one of {sorted(ANNOTATION_URLS)}."
-		)
-
-	url = ANNOTATION_URLS[resolution_um]
-	raw = download_bytes(url)
-
-	memory_file = io.BytesIO(raw)
-	header = nrrd.read_header(memory_file)
-
-	volume = nrrd.read_data(
-		header,
-		memory_file,
-	)
-
-	return volume
-
-
-def load_structure_graph() -> pd.DataFrame:
-	"""
-	Load the Allen Brain Atlas structure ontology into memory
-	(STRUCTURE_GRAPH_URL).
-
-	The structure graph describes the hierarchical relationships between
-	brain regions and includes region IDs, names, acronyms, parent
-	structures, ontology paths, and Allen display colors.
-
-	The ontology JSON is downloaded from the Allen Institute API and read
-	directly from memory, without saving the JSON file to disk.
-
-	Returns:
-	    pandas.DataFrame
-	        Table containing structure metadata including region ID,
-	        acronym, name, parent structure ID, graph order, ontology path,
-	        and Allen color.
-	"""
-	raw = download_bytes(STRUCTURE_GRAPH_URL)
-	data = json.loads(raw.decode("utf-8"))
-
-	rows = []
-	stack = [(node, None) for node in reversed(data["msg"])]  # the json is not flat
-
-	while stack:
-		# process nodes until there are no more ontology nodes left
-		node, parent_id = stack.pop()
-		rows.append(
-			{
-				"id": int(node["id"]),
-				"acronym": node.get("acronym"),
-				"name": node.get("name"),
-				"parent_structure_id": parent_id,
-				"graph_order": node.get("graph_order"),
-				"structure_id_path": node.get("structure_id_path"),
-				"color_hex_triplet": node.get("color_hex_triplet"),
-			}
-		)
-
-		children = node.get("children", [])
-		for child in reversed(children):
-			stack.append((child, int(node["id"])))
-
-	return pd.DataFrame(rows)
 
 
 def get_slice_view(
@@ -580,7 +459,7 @@ def build_geojson(
 	    volume : np.ndarray
 	        3D Allen CCF annotation volume containing integer structure IDs.
 	    structure_df : pd.DataFrame
-	        Allen ontology table returned by load_structure_graph().
+	        Ontology table, e.g. ``Atlas.structure_df`` from ``load_atlas()``.
 	    orientation : {"coronal", "sagittal", "horizontal"}
 	        Slice orientation used when extracting 2D views from the volume.
 	    resolution_um : int, default=25
