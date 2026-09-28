@@ -28,7 +28,7 @@ def load_atlas(
 
 	Returns:
 	    BrainGlobeAtlas
-	        Atlas exposing annotation, structure_df, resolution_um and
+	        Atlas exposing annotation, structure_df, voxel_size_um and
 	        species for build_geojson().
 
 	Examples:
@@ -36,7 +36,7 @@ def load_atlas(
 	    >>> geojson = build_geojson(
 	    ...     volume=atlas.annotation,
 	    ...     structure_df=atlas.structure_df,
-	    ...     resolution_um=atlas.resolution_um,
+	    ...     voxel_size_um=atlas.voxel_size_um,
 	    ...     species=atlas.species,
 	    ...     orientation="coronal",
 	    ...     coords_mm=[-2.0],

@@ -285,3 +285,28 @@ def test_ui_atlas_options_chain():
 	assert [o["value"] for o in res] == ["allen_mouse_25um", "allen_mouse_10um"]
 	assert res[0]["label"] == "25 µm (downloaded)"
 	assert layout.pick_option(res, "missing") == "allen_mouse_25um"
+
+
+def test_build_geojson_stretches_anisotropic_voxels(structure_df):
+	# AP voxels twice as long as DV/LR: in a horizontal slice (rows = AP) a
+	# 4x4-voxel block is twice as tall as wide, also after lon/lat scaling.
+	vol = np.zeros((10, 3, 10), dtype=np.uint32)
+	vol[3:7, 1, 3:7] = 315
+	geojson = build_geojson(
+		volume=vol,
+		structure_df=structure_df,
+		orientation="horizontal",
+		voxel_size_um=(20.0, 10.0, 10.0),
+		species="rat",
+		slice_indices=[1],
+		min_area_px=0,
+		simplify_px=0,
+		polygon_mode="raster",
+	)
+	feat = geojson["features"][0]
+	pts = np.array([p for poly in feat["geometry"]["coordinates"] for ring in poly for p in ring])
+	width = np.ptp(pts[:, 0])
+	height = np.ptp(pts[:, 1])
+	assert height == pytest.approx(2 * width)
+	assert feat["properties"]["resolution_um"] == 10.0  # along the DV slicing axis
+	assert feat["properties"]["voxel_size_um"] == [20.0, 10.0, 10.0]

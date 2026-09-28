@@ -12,13 +12,16 @@ import pandas as pd
 from rasterio.features import shapes
 from scipy.ndimage import gaussian_filter
 from skimage import measure
+from shapely.affinity import scale as scale_geometry
 from shapely.geometry import MultiPolygon, Polygon, mapping, shape
 from shapely.ops import unary_union
 from tqdm.auto import tqdm
 
 from geobrain.coord_system import (
 	coord_mm_to_slice_index,
+	pixel_scale,
 	range_mm_to_slice_indices,
+	slice_axis,
 	slice_index_to_coordinate_mm,
 )
 
@@ -38,9 +41,11 @@ class BuildConfig:
 	Args:
 	    out_dir : str
 	        Output directory where the final GeoJSON file is saved.
-	    resolution_um : int, default=25
-	        Allen annotation volume resolution in microns.
-	        Supported values are 10, 25, 50, and 100.
+	    resolution_um : float, default=25
+	        Isotropic atlas voxel size in microns, e.g. ``Atlas.resolution_um``.
+	    voxel_size_um : tuple[float, float, float] | None, default=None
+	        Per-axis voxel size (AP, DV, LR) for anisotropic atlases, e.g.
+	        ``Atlas.voxel_size_um``. Takes precedence over resolution_um.
 	    orientation : {"coronal", "sagittal", "horizontal"}, default="coronal"
 	        Slice orientation used to extract 2D views from the 3D annotation
 	        volume. Orientation determines which stereotaxic coordinate is used:
@@ -75,7 +80,8 @@ class BuildConfig:
 	"""
 
 	out_dir: str
-	resolution_um: int = 25
+	resolution_um: float = 25
+	voxel_size_um: tuple[float, float, float] | None = None
 	orientation: Literal["coronal", "sagittal", "horizontal"] = "coronal"
 
 	coords_mm: list[float] | None = None
@@ -316,6 +322,7 @@ def scale_cartesian_to_lonlat(
 	geojson_obj: dict,
 	lon_range: tuple[float, float] = (-15.0, 15.0),
 	lat_range: tuple[float, float] = (-10.0, 10.0),
+	keep_aspect: bool = True,
 ) -> dict:
 	"""
 	Convert GeoJSON polygon coordinates from atlas Cartesian pixel space [x, y]
@@ -335,6 +342,12 @@ def scale_cartesian_to_lonlat(
 	because atlas pixel coordinates increase downward while latitude increases
 	upward.
 
+	With keep_aspect=True (default), x and y share one scale factor, so the
+	geometry keeps its proportions: it fills lon_range or lat_range
+	(whichever is tighter) and is centred in the other. With
+	keep_aspect=False, x and y are stretched independently to fill both
+	ranges, which distorts slices whose shape differs from the ranges'.
+
 	Args:
 	    geojson_obj : dict
 	        GeoJSON FeatureCollection containing coordinates in atlas
@@ -343,6 +356,8 @@ def scale_cartesian_to_lonlat(
 	        Output longitude range used for min-max scaling.
 	    lat_range : tuple[float, float], default=(-10.0, 10.0)
 	        Output latitude range used for min-max scaling.
+	    keep_aspect : bool, default=True
+	        Use one scale factor for both axes so shapes are not distorted.
 
 	Returns:
 	    dict
@@ -387,25 +402,28 @@ def scale_cartesian_to_lonlat(
 	lon_min, lon_max = lon_range
 	lat_min, lat_max = lat_range
 
-	# Guard against a zero-extent axis (e.g. a single point or a sliver):
-	# a degenerate span maps every coordinate to the middle of the range
-	# instead of dividing by zero and producing NaN/inf.
 	x_span = xmax - xmin
 	y_span = ymax - ymin
+
+	# Scale factors (degrees per pixel). A zero-extent axis (e.g. a single
+	# point or a sliver) gets no factor of its own, so it maps to the middle of
+	# its range instead of dividing by zero and producing NaN/inf.
+	kx = (lon_max - lon_min) / x_span if x_span else None
+	ky = (lat_max - lat_min) / y_span if y_span else None
+	if keep_aspect:
+		factors = [k for k in (kx, ky) if k is not None]
+		kx = ky = min(factors) if factors else 0.0
+	kx, ky = kx or 0.0, ky or 0.0
+
+	x_mid, y_mid = (xmin + xmax) / 2, (ymin + ymax) / 2
+	lon_mid, lat_mid = (lon_min + lon_max) / 2, (lat_min + lat_max) / 2
 
 	for f in features:
 		geom = f["geometry"]
 		geom["coordinates"] = [
 			[
 				[
-					[
-						float(
-							lon_min + ((x - xmin) / x_span if x_span else 0.5) * (lon_max - lon_min)
-						),
-						float(
-							lat_max - ((y - ymin) / y_span if y_span else 0.5) * (lat_max - lat_min)
-						),
-					]
+					[float(lon_mid + (x - x_mid) * kx), float(lat_mid - (y - y_mid) * ky)]
 					for x, y in ring
 				]
 				for ring in polygon
@@ -420,8 +438,9 @@ def build_geojson(
 	volume: np.ndarray,
 	structure_df: pd.DataFrame,
 	orientation: str,
-	resolution_um: int = 25,
+	resolution_um: float = 25,
 	species: str = "mouse",
+	voxel_size_um: tuple[float, float, float] | None = None,
 	min_area_px: float = 5.0,
 	simplify_px: float = 0.8,
 	smooth_sigma: float = 1.0,
@@ -433,6 +452,7 @@ def build_geojson(
 	step_mm: float | None = None,
 	lon_range: tuple[float, float] = (-15.0, 15.0),
 	lat_range: tuple[float, float] = (-10.0, 10.0),
+	keep_aspect: bool = True,
 ) -> dict:
 	"""
 	Build one GeoJSON FeatureCollection from selected Allen atlas slices.
@@ -462,13 +482,18 @@ def build_geojson(
 	        Ontology table, e.g. ``Atlas.structure_df`` from ``load_atlas()``.
 	    orientation : {"coronal", "sagittal", "horizontal"}
 	        Slice orientation used when extracting 2D views from the volume.
-	    resolution_um : int, default=25
-	        Atlas voxel resolution in microns.
+	    resolution_um : float, default=25
+	        Isotropic atlas voxel size in microns, e.g. ``Atlas.resolution_um``.
 	    species : str, default="mouse"
 	        Atlas species, e.g. ``Atlas.species``. Bregma-relative
 	        coordinates (coords_mm, start_mm/end_mm) are only supported for
 	        "mouse"; other species must select slices with slice_indices, and
 	        their features get ``coordinate_mm=None``.
+	    voxel_size_um : tuple[float, float, float] | None, default=None
+	        Per-axis voxel size (AP, DV, LR), e.g. ``Atlas.voxel_size_um``.
+	        Required for anisotropic atlases; takes precedence over
+	        resolution_um. Polygons are stretched by their in-plane voxel sizes
+	        so slices keep their true proportions.
 	    min_area_px : float, default=5.0
 	        Minimum polygon area in pixels. Smaller polygons are discarded.
 	    simplify_px : float, default=0.8
@@ -496,6 +521,9 @@ def build_geojson(
 	        Output longitude range used during coordinate scaling.
 	    lat_range : tuple[float, float], default=(-10.0, 10.0)
 	        Output latitude range used during coordinate scaling.
+	    keep_aspect : bool, default=True
+	        Keep the slice's proportions when scaling to lon/lat (see
+	        scale_cartesian_to_lonlat).
 
 	Returns:
 	    dict
@@ -558,6 +586,12 @@ def build_geojson(
 			"slice_indices, coords_mm, or start_mm/end_mm."
 		)
 
+	voxel = tuple(float(v) for v in (voxel_size_um or (resolution_um,) * 3))
+	# Voxel size along the slicing axis: the one that turns mm into slice
+	# indices (bregma coordinates are mouse-only, whose atlases are isotropic).
+	resolution_um = voxel[slice_axis(orientation)]
+	sx, sy = pixel_scale(orientation, voxel)
+
 	if slice_indices is not None:
 		pass
 
@@ -614,6 +648,8 @@ def build_geojson(
 
 			if geom is None:
 				continue
+			if (sx, sy) != (1.0, 1.0):
+				geom = scale_geometry(geom, xfact=sx, yfact=sy, origin=(0, 0))
 
 			row = id2row.get(rid, {})
 
@@ -630,7 +666,8 @@ def build_geojson(
 						"slice_index": int(slice_index),
 						"coordinate_mm": coordinate_mm,
 						"orientation": orientation,
-						"resolution_um": int(resolution_um),
+						"resolution_um": resolution_um,
+						"voxel_size_um": list(voxel),
 					},
 					"geometry": mapping(geom),
 				}
@@ -645,6 +682,7 @@ def build_geojson(
 		geojson,
 		lon_range=lon_range,
 		lat_range=lat_range,
+		keep_aspect=keep_aspect,
 	)
 
 	return geojson

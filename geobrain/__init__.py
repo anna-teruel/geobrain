@@ -16,10 +16,12 @@ from geobrain.coord_system import (
 	coord_mm_to_slice_index,
 	has_bregma,
 	labelled_slice_bounds,
+	pixel_scale,
 	get_ccf_config,
 	range_mm_to_slice_indices,
 	slice_axis,
 	slice_index_to_coordinate_mm,
+	slice_plane_axes,
 )
 from geobrain.io import load_atlas, load_geojson, load_score, save_figure
 from geobrain.metadata import MetadataConfig
@@ -56,9 +58,11 @@ __all__ = [
 	"coord_mm_to_slice_index",
 	"has_bregma",
 	"labelled_slice_bounds",
+	"pixel_scale",
 	"get_ccf_config",
 	"range_mm_to_slice_indices",
 	"slice_axis",
+	"slice_plane_axes",
 	"slice_index_to_coordinate_mm",
 	"load_geojson",
 	"load_score",

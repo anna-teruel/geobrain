@@ -55,6 +55,29 @@ def slice_axis(orientation: Orientation) -> int:
 	return _SLICE_AXIS[orientation]
 
 
+# Volume axes along a slice's rows and columns (matches get_slice_view).
+_PLANE_AXES = {"coronal": (1, 2), "horizontal": (0, 2), "sagittal": (0, 1)}
+
+
+def slice_plane_axes(orientation: Orientation) -> tuple[int, int]:
+	"""Volume axes (row_axis, col_axis) of a 2D slice from get_slice_view."""
+	return _PLANE_AXES[orientation]
+
+
+def pixel_scale(
+	orientation: Orientation,
+	voxel_size_um: tuple[float, float, float],
+) -> tuple[float, float]:
+	"""
+	(x, y) factors that stretch a slice's pixel coordinates (x = column,
+	y = row) to true proportions, relative to the atlas's finest voxel size.
+	Both are 1.0 for isotropic atlases.
+	"""
+	row_axis, col_axis = _PLANE_AXES[orientation]
+	finest = min(voxel_size_um)
+	return voxel_size_um[col_axis] / finest, voxel_size_um[row_axis] / finest
+
+
 def atlas_extent_mm(
 	volume_shape: tuple[int, ...],
 	orientation: Orientation,

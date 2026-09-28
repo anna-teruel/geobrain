@@ -7,7 +7,7 @@ from plotly.colors import sample_colorscale
 from geobrain.build_geoJSON import get_slice_view, mask_to_polygon
 from geobrain.choropleth_render import value_to_color
 from geobrain.colormaps import resolve_name
-from geobrain.coord_system import slice_index_to_coordinate_mm
+from geobrain.coord_system import pixel_scale, slice_index_to_coordinate_mm
 
 SCORE_VALUE_COLUMN = {
 	"rel_abundance": "relative_abundance_z",
@@ -42,11 +42,6 @@ def _screen_dims(orientation: str, n_rows: int, n_cols: int) -> dict[str, int]:
 	if orientation == "sagittal":
 		return {"w": int(n_rows), "h": int(n_cols)}
 	return {"w": int(n_cols), "h": int(n_rows)}
-
-
-# Volume axes (AP=0, DV=1, LR=2) along a slice's rows and columns, per
-# get_slice_view.
-_ROW_COL_AXES = {"coronal": (1, 2), "horizontal": (0, 2), "sagittal": (0, 1)}
 
 
 def build_slice_geometry(
@@ -84,12 +79,7 @@ def build_slice_geometry(
 	the slice keeps its true proportions on screen. Omitted, voxels are
 	treated as cubes.
 	"""
-	row_axis, col_axis = _ROW_COL_AXES[orientation]
-	if voxel_size_um is None:
-		sx = sy = 1.0
-	else:
-		finest = min(voxel_size_um)
-		sx, sy = voxel_size_um[col_axis] / finest, voxel_size_um[row_axis] / finest
+	sx, sy = (1.0, 1.0) if voxel_size_um is None else pixel_scale(orientation, voxel_size_um)
 
 	id2row = structure_df.set_index("id").to_dict(orient="index")
 	by_slice: dict[str, list[dict[str, Any]]] = {}

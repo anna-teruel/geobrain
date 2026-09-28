@@ -195,3 +195,16 @@ def test_labelled_slice_bounds_ignores_empty_padding():
 	# chunk=16 so the tissue straddles chunk borders
 	assert labelled_slice_bounds(vol, chunk=16) == ((5, 33), (2, 15), (10, 24))
 	assert labelled_slice_bounds(np.zeros((3, 4, 5))) == ((0, 2), (0, 3), (0, 4))
+
+
+def test_pixel_scale_and_plane_axes():
+	from geobrain.coord_system import pixel_scale, slice_plane_axes
+
+	assert slice_plane_axes("coronal") == (1, 2)
+	assert slice_plane_axes("horizontal") == (0, 2)
+	assert slice_plane_axes("sagittal") == (0, 1)
+	voxel = (2.542, 1.2407, 1.2407)  # kocher_bumblebee_2.542um
+	assert pixel_scale("coronal", voxel) == (1.0, 1.0)
+	assert pixel_scale("horizontal", voxel) == pytest.approx((1.0, 2.542 / 1.2407))
+	assert pixel_scale("sagittal", voxel) == pytest.approx((1.0, 2.542 / 1.2407))
+	assert pixel_scale("coronal", (25.0, 25.0, 25.0)) == (1.0, 1.0)
