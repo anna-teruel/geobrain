@@ -124,8 +124,10 @@ class Atlas(ABC):
 	    structure_df : pd.DataFrame
 	        Ontology table with columns [id, acronym, name,
 	        parent_structure_id, structure_id_path, color_hex_triplet].
+	    voxel_size_um : tuple[float, float, float]
+	        Voxel size in microns along each volume axis (AP, DV, LR).
 	    resolution_um : float
-	        Isotropic voxel size in microns.
+	        Single voxel size in microns, for isotropic atlases only.
 
 	The annotation volume must use BrainGlobe's standard axis order
 	(ATLAS_ORIENTATION, "asr": axis 0 = AP, axis 1 = DV, axis 2 = LR),
@@ -147,6 +149,10 @@ class Atlas(ABC):
 	@property
 	@abstractmethod
 	def structure_df(self) -> pd.DataFrame: ...
+
+	@property
+	@abstractmethod
+	def voxel_size_um(self) -> tuple[float, float, float]: ...
 
 	@property
 	@abstractmethod
@@ -242,14 +248,25 @@ class BrainGlobeAtlas(Atlas):
 		return df
 
 	@property
+	def voxel_size_um(self) -> tuple[float, float, float]:
+		"""
+		Voxel size in microns along each volume axis (AP, DV, LR). Some
+		atlases are anisotropic, e.g. kocher_bumblebee_2.542um is
+		(2.542, 1.2407, 1.2407).
+		"""
+		return tuple(float(r) for r in self._atlas.resolution)
+
+	@property
 	def resolution_um(self) -> float:
 		"""Isotropic voxel size in microns.
 
 		Raises:
 		    ValueError
-		        If the atlas resolution is not isotropic.
+		        If the atlas is anisotropic; use voxel_size_um instead.
 		"""
-		resolution = self._atlas.resolution
-		if len(set(resolution)) != 1:
-			raise ValueError(f"Non-isotropic atlas resolution {resolution} is not supported.")
-		return float(resolution[0])
+		voxel = self.voxel_size_um
+		if len(set(voxel)) != 1:
+			raise ValueError(
+				f"Atlas {self.name!r} has anisotropic voxels {voxel} µm; use voxel_size_um."
+			)
+		return voxel[0]

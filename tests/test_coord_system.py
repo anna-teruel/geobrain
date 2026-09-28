@@ -177,3 +177,9 @@ def test_atlas_range_mm_to_slice_indices():
 	assert atlas_range_mm_to_slice_indices(-3.0, -1.0, shape, resolution_um=500) == []
 	with pytest.raises(ValueError):
 		atlas_range_mm_to_slice_indices(0.0, 1.0, shape, step_mm=0, resolution_um=500)
+
+
+def test_slice_axis_matches_get_slice_view():
+	from geobrain.coord_system import slice_axis
+
+	assert [slice_axis(o) for o in ("coronal", "horizontal", "sagittal")] == [0, 1, 2]

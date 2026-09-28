@@ -447,13 +447,16 @@ def register_callbacks(app) -> None:
 			atlas = geobrain.load_atlas(atlas_name)
 			volume = atlas.annotation
 			structure_df = atlas.structure_df
+			voxel_size_um = atlas.voxel_size_um
+			species = atlas.species
 		except Exception as exc:  # download / disk / atlas errors
 			_notify(f"Could not load atlas: {exc}", "error")
 			return no_update, _status("Atlas load failed.", "red"), no_update
 		cache.put(session_id, "volume", volume)
 		cache.put(session_id, "structure_df", structure_df)
-		cache.put(session_id, "resolution_um", atlas.resolution_um)
-		cache.put(session_id, "species", atlas.species)
+		# Per axis (AP, DV, LR): some atlases have anisotropic voxels.
+		cache.put(session_id, "voxel_size_um", voxel_size_um)
+		cache.put(session_id, "species", species)
 		cache.put(session_id, "atlas_name", atlas.name)
 		status = f"Loaded {atlas.name} - volume {volume.shape}."
 		return session_id, _status(status, "green"), False
@@ -478,7 +481,8 @@ def register_callbacks(app) -> None:
 			hint = "Positions in mm relative to bregma." if volume is not None else ""
 			return "Start (mm)", "End (mm)", hint, no_update, no_update, no_update
 
-		res = float(cache.get(session_id, "resolution_um", 25))
+		voxel = cache.get(session_id, "voxel_size_um", (25.0, 25.0, 25.0))
+		res = voxel[geobrain.slice_axis(orientation)]
 		extent = geobrain.atlas_extent_mm(volume.shape, orientation, res)
 		atlas_name = cache.get(session_id, "atlas_name", "This atlas")
 		hint = (
@@ -539,7 +543,10 @@ def register_callbacks(app) -> None:
 			_notify("Load the atlas first (step 1).", "warning")
 			return no_update, no_update, no_update, no_update, no_update, no_update
 
-		res = float(cache.get(session_id, "resolution_um", 25))
+		voxel = cache.get(session_id, "voxel_size_um", (25.0, 25.0, 25.0))
+		# Voxel size along the slicing axis: the only one that turns mm into
+		# slice indices (and the only one there is for isotropic atlases).
+		res = voxel[geobrain.slice_axis(orientation)]
 		species = cache.get(session_id, "species", "mouse")
 		step = float(step_mm) if step_mm else None
 		try:
@@ -589,6 +596,7 @@ def register_callbacks(app) -> None:
 				polygon_mode=polygon_mode,
 				progress=_report,
 				species=species,
+				voxel_size_um=voxel,
 			)
 		except Exception as exc:
 			set_progress((0, _status(f"Could not build slices: {exc}", "red")))

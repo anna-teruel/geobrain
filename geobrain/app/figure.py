@@ -44,11 +44,16 @@ def _screen_dims(orientation: str, n_rows: int, n_cols: int) -> dict[str, int]:
 	return {"w": int(n_cols), "h": int(n_rows)}
 
 
+# Volume axes (AP=0, DV=1, LR=2) along a slice's rows and columns, per
+# get_slice_view.
+_ROW_COL_AXES = {"coronal": (1, 2), "horizontal": (0, 2), "sagittal": (0, 1)}
+
+
 def build_slice_geometry(
 	volume: np.ndarray,
 	structure_df,
 	orientation: str,
-	resolution_um: int,
+	resolution_um: float,
 	slice_indices: list[int],
 	min_area_px: float = 5.0,
 	simplify_px: float = 0.8,
@@ -56,6 +61,7 @@ def build_slice_geometry(
 	polygon_mode: str = "contour",
 	progress=None,
 	species: str = "mouse",
+	voxel_size_um: tuple[float, float, float] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 	"""Build undistorted, correctly-oriented pixel geometry for the given slices.
 
@@ -72,7 +78,19 @@ def build_slice_geometry(
 	``callable(i, n, slice_index)`` used to drive the progress bar. ``species``
 	decides whether slices get a bregma-relative ``coordinate_mm`` (mouse
 	only) or ``None``.
+
+	``voxel_size_um`` (AP, DV, LR) handles anisotropic atlases: rows and
+	columns are stretched by their voxel size relative to the finest axis, so
+	the slice keeps its true proportions on screen. Omitted, voxels are
+	treated as cubes.
 	"""
+	row_axis, col_axis = _ROW_COL_AXES[orientation]
+	if voxel_size_um is None:
+		sx = sy = 1.0
+	else:
+		finest = min(voxel_size_um)
+		sx, sy = voxel_size_um[col_axis] / finest, voxel_size_um[row_axis] / finest
+
 	id2row = structure_df.set_index("id").to_dict(orient="index")
 	by_slice: dict[str, list[dict[str, Any]]] = {}
 	slices_meta: list[dict[str, Any]] = []
@@ -83,7 +101,7 @@ def build_slice_geometry(
 		si = int(si)
 		slice_img = get_slice_view(volume, si, orientation)
 		n_rows, n_cols = slice_img.shape
-		dims = _screen_dims(orientation, n_rows, n_cols)
+		dims = _screen_dims(orientation, round(n_rows * sy), round(n_cols * sx))
 
 		try:
 			coord_mm = slice_index_to_coordinate_mm(si, orientation, resolution_um, species=species)
@@ -110,8 +128,8 @@ def build_slice_geometry(
 			for poly in geom.geoms:
 				ring = []
 				for x, y in poly.exterior.coords:
-					sx, sy = _screen_xy(orientation, x, y)
-					ring.append([round(float(sx), 2), round(float(sy), 2)])
+					px, py = _screen_xy(orientation, x * sx, y * sy)
+					ring.append([round(float(px), 2), round(float(py), 2)])
 				if len(ring) >= 3:
 					rings.append(ring)
 			if not rings:

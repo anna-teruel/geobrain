@@ -17,6 +17,7 @@ from geobrain.coord_system import (
 	has_bregma,
 	get_ccf_config,
 	range_mm_to_slice_indices,
+	slice_axis,
 	slice_index_to_coordinate_mm,
 )
 from geobrain.io import load_atlas, load_geojson, load_score, save_figure
@@ -55,6 +56,7 @@ __all__ = [
 	"has_bregma",
 	"get_ccf_config",
 	"range_mm_to_slice_indices",
+	"slice_axis",
 	"slice_index_to_coordinate_mm",
 	"load_geojson",
 	"load_score",

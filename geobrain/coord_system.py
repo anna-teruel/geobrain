@@ -46,8 +46,13 @@ def has_bregma(species: str) -> bool:
 	return species.lower() == "mouse"
 
 
-# Volume axis each orientation slices along (matches get_slice_view).
+# Volume axis perpendicular to each section plane (matches get_slice_view).
 _SLICE_AXIS = {"coronal": 0, "horizontal": 1, "sagittal": 2}
+
+
+def slice_axis(orientation: Orientation) -> int:
+	"""Volume axis perpendicular to ``orientation``'s section plane (AP=0, DV=1, LR=2)."""
+	return _SLICE_AXIS[orientation]
 
 
 def atlas_extent_mm(

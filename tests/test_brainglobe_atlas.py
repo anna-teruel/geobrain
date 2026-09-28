@@ -119,10 +119,36 @@ def test_name_and_resolution(use_fake_atlas):
 	assert atlas.resolution_um == 25.0
 
 
-def test_non_isotropic_resolution_raises(use_fake_atlas):
-	use_fake_atlas(resolution=(25.0, 25.0, 50.0))
-	with pytest.raises(ValueError, match="Non-isotropic"):
-		BrainGlobeAtlas("fake").resolution_um
+def test_anisotropic_atlas_exposes_voxel_size(use_fake_atlas):
+	use_fake_atlas(resolution=(2.542, 1.2407, 1.2407))
+	atlas = BrainGlobeAtlas("fake")
+	assert atlas.voxel_size_um == (2.542, 1.2407, 1.2407)
+	with pytest.raises(ValueError, match="anisotropic"):
+		atlas.resolution_um
+
+
+def test_build_slice_geometry_stretches_anisotropic_voxels(structure_df):
+	# AP voxels twice as long as DV/LR: in a horizontal slice (rows = AP) a
+	# 4x4-voxel block must be drawn twice as tall as it is wide.
+	vol = np.zeros((10, 3, 10), dtype=np.uint32)
+	vol[3:7, 1, 3:7] = 315
+	geo, _ = figure.build_slice_geometry(
+		volume=vol,
+		structure_df=structure_df,
+		orientation="horizontal",
+		resolution_um=20.0,
+		slice_indices=[1],
+		min_area_px=0,
+		smooth_sigma=0,
+		polygon_mode="raster",
+		species="rat",
+		voxel_size_um=(20.0, 10.0, 10.0),
+	)
+	assert geo["dims"] == {"w": 10, "h": 20}
+	ring = np.array(geo["by_slice"]["1"][0]["rings"][0])
+	width = ring[:, 0].max() - ring[:, 0].min()
+	height = ring[:, 1].max() - ring[:, 1].min()
+	assert height == pytest.approx(2 * width, rel=0.1)
 
 
 def test_non_asr_origin_raises(use_fake_atlas):
