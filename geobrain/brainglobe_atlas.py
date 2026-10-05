@@ -216,9 +216,12 @@ class BrainGlobeAtlas(Atlas):
 		so the values serialize cleanly into GeoJSON properties.
 
 		The parent ID is taken from structure_id_path rather than
-		parent_structure_id: brainglobe_atlasapi 3.0.1 reads the latter as
-		uint16, so parent IDs above 65535 wrap around (e.g. Allen's
-		182305689 becomes 50073).
+		parent_structure_id: brainglobe_atlasapi up to 3.0.2 reads the latter
+		as uint16, so parent IDs above 65535 wrap around (e.g. Allen's
+		182305689 becomes 50073). Fixed upstream in
+		brainglobe/brainglobe-atlasapi#974 (merged 2026-09-30, not yet in a
+		release); once GeoBrain requires a release that includes it,
+		parent_structure_id can be read directly.
 
 		Returns:
 		    pd.DataFrame
