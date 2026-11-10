@@ -380,7 +380,7 @@ def _step3_scores():
 							span=3,
 						),
 					],
-					gutter="xs",
+					gap="xs",
 				),
 				dmc.Accordion(
 					value=None,
@@ -786,7 +786,7 @@ def build_layout():
 							style={"minWidth": 0},
 						),
 					],
-					gutter="md",
+					gap="md",
 				),
 			],
 			id="app-root",

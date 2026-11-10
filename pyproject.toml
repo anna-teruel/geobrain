@@ -32,8 +32,8 @@ dependencies = [
     "rasterio",
     "shapely",
     "scikit-image",
-    "dash>=2.17",
-    "dash-mantine-components>=0.14",
+    "dash>=4.5",  # first version known to ship React 19
+    "dash-mantine-components>=3",
     "diskcache",
     "multiprocess",
     "psutil",

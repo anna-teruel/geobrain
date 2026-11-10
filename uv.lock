@@ -700,14 +700,14 @@ testing = [
 
 [[package]]
 name = "dash-mantine-components"
-version = "2.8.0"
+version = "3.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dash" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9a/56/111c6295327ded76481bc9d0a1d3a936029b4e6cc4b0d70b5ea25f4c6a12/dash_mantine_components-2.8.0.tar.gz", hash = "sha256:8891dd8042c93697f673f30df9ea34e5a4e9a0486d6f42499e16825a2a07784a", size = 924142, upload-time = "2026-06-09T15:23:13.276Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f6/ab/f34545064c446a48deb76c9d7ceac303524c94e605a4ad5da30e5817b97d/dash_mantine_components-3.0.0.tar.gz", hash = "sha256:5490e96485da55f50f568b4e11f95e2b5b9ccf8389653669b15c15e4ac98730f", size = 1093999, upload-time = "2026-10-30T12:37:10.49Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/2e/2f104c233fb9d6081007e091936f79094f509ae3942350a220c94c332c49/dash_mantine_components-2.8.0-py3-none-any.whl", hash = "sha256:ad18542b0f376c041232b2b9fd2882065abbd68506f98dc9c75726104c16b54b", size = 1377181, upload-time = "2026-06-09T15:23:11.273Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/73/b56dde56ab793c90afce0f80b105ff81c76f86a833577897933f3e7243f6/dash_mantine_components-3.0.0-py3-none-any.whl", hash = "sha256:1b7c12329bd10f2e1ff520e1553e62d122b04daf598f46e143c9c5a578e672e2", size = 1571669, upload-time = "2026-10-30T12:37:08.761Z" },
 ]
 
 [[package]]
@@ -1045,9 +1045,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "brainglobe-atlasapi", specifier = ">=3.0.2" },
-    { name = "dash", specifier = ">=2.17" },
+    { name = "dash", specifier = ">=4.5" },
     { name = "dash", extras = ["testing"], marker = "extra == 'test'" },
-    { name = "dash-mantine-components", specifier = ">=0.14" },
+    { name = "dash-mantine-components", specifier = ">=3" },
     { name = "diskcache" },
     { name = "ipykernel", marker = "extra == 'notebook'" },
     { name = "kaleido" },
