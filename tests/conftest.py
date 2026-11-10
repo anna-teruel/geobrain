@@ -11,7 +11,7 @@ import pytest
 
 @pytest.fixture
 def structure_df() -> pd.DataFrame:
-	"""Minimal Allen ontology table, shaped like Atlas.structure_df."""
+	"""Minimal Allen ontology table, shaped like BrainGlobeAtlas.structure_df."""
 	return pd.DataFrame(
 		[
 			{

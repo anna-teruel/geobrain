@@ -16,11 +16,16 @@ After installing (see the [README](../README.md)):
 geobrain
 ```
 
-A browser tab opens automatically at `http://127.0.0.1:8050`. Options:
+A browser tab opens automatically at `http://127.0.0.1:8050`. To use another
+port:
 
 ```
-geobrain --host 0.0.0.0 --port 8060
+geobrain --port 8060
 ```
+
+The dashboard only listens on `127.0.0.1`, so it is reachable from your own
+machine only. This is deliberate: it saves files to your disk and opens file
+dialogs on your screen, which nobody else on the network should be able to do.
 
 ---
 
@@ -50,18 +55,25 @@ loading files you saved earlier.
 Two tabs:
 
 ### "Load atlas"
-1. Pick a **Resolution** (10 / 25 / 50 / 100 µm). Lower µm = finer but slower, 25 and 50 are a nice middle ground
-   and heavier.
-2. Click **Load atlas**. This downloads/loads the Allen annotation volume and
-   structure graph (a loader spins; status shows the loaded shape).
+1. Pick a **Species**, an **Atlas** and a **Resolution**. Every
+   [BrainGlobe](https://brainglobe.info) atlas is listed; ones already on disk are
+   marked *(downloaded)*. Lower µm is finer but slower and heavier; for the Allen
+   mouse atlas, 25 and 50 µm are a good middle ground.
+2. Click **Load atlas**. The first load of an atlas downloads it into
+   BrainGlobe's cache (`~/.brainglobe`); later loads read it from there. A loader
+   spins and the status shows the loaded volume shape.
 
 This enables **Step 2**.
 
 ### "Load processed files" (resume a previous session)
 If you already exported geometry and/or scores before, skip the atlas entirely:
 - **Load GeoJSON** — upload a `brain_slices.geojson` you saved in Step 2.
-  This reconstructs the slices and populates the slider.
-- **Load scores** — upload a `region_scores.csv` you saved in Step 3.
+  This reconstructs the slices and populates the slider. Every feature needs a
+  `Region ID`, a `slice_index` and 2D Polygon/MultiPolygon geometry; otherwise a
+  red toast names the first field that is missing or wrong.
+- **Load scores** — upload a `region_scores.csv` you saved in Step 3. It needs
+  a `Region ID` column and at least one score column
+  (`relative_abundance_z`, `frequency` or `density`).
 
 Loading both gets you straight to the view with no atlas processing.
 
@@ -73,8 +85,13 @@ Defines which slices to cut and turns the atlas volume into polygon geometry.
 
 1. **Orientation** — Coronal, Sagittal, or Horizontal. This sets which axis the
    slice coordinates refer to (coronal → AP, sagittal → ML, horizontal → DV).
-2. **Start (mm) / End (mm) / Step (mm)** — the range of stereotaxic coordinates
-   (relative to bregma) to slice, and the spacing between slices.
+2. **Start / End / Step (mm)** — the range to slice and the spacing between
+   slices. How positions are measured depends on the atlas (the hint under the
+   inputs says which applies):
+   - **Allen mouse atlases** (`allen_mouse_*`): stereotaxic mm relative to
+     bregma. Slices outside the atlas are skipped.
+   - **Every other atlas**: mm from the first slice along the chosen axis. The
+     inputs are pre-filled with the span of the brain tissue.
 3. **Advanced build options** (collapsed by default):
    - **Polygon mode** — *Contour (smooth)* for clean curved outlines, or
      *Raster (fast)* for speed.

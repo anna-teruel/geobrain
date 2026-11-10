@@ -4,13 +4,13 @@ Region-level score tables from QUINT *_RefAtlasRegions.csv exports.
 
 import glob
 import os
-from typing import Callable
+from collections.abc import Callable
 
 import pandas as pd
 from scipy.stats import zscore
 
 from geobrain.metadata import MetadataConfig
-from geobrain.types import ScoreName, RelAbundanceMethod, ReferenceMode
+from geobrain.types import ReferenceMode, RelAbundanceMethod, ScoreName
 
 ScoreFn = Callable[[pd.DataFrame], pd.DataFrame]
 
@@ -322,8 +322,10 @@ def density_score(
 	"""
 	Compute region-level object density across animals.
 
-	Density is defined as the total number of detected objects divided by the
-	total region area across animals.
+	Density is computed per animal as objects / region area, then averaged
+	across animals, so every animal counts equally and the value does not
+	grow with group size. Animals whose area for a region is zero or missing
+	are left out of that region's mean.
 
 	Interpretation:
 	    - Higher density values indicate that objects are more concentrated
@@ -344,22 +346,22 @@ def density_score(
 	        - objects_total
 	        - area_total
 	        - n_animals
-	        - density
+	        - density (NA when no animal has a positive area)
 	"""
-	region_density = (
-		region_by_subject.groupby([col_id, col_name], dropna=True)
+	area = region_by_subject[area_col]
+	per_animal = region_by_subject.assign(
+		_density=(region_by_subject["objects"] / area).where(area > 0)
+	)
+	return (
+		per_animal.groupby([col_id, col_name], dropna=True)
 		.agg(
 			objects_total=("objects", "sum"),
-			area_total=(area_col, "mean"),
+			area_total=(area_col, "sum"),
 			n_animals=("animal", "nunique"),
+			density=("_density", "mean"),
 		)
 		.reset_index()
 	)
-
-	region_density["density"] = region_density["objects_total"] / region_density["area_total"]
-	region_density.loc[region_density["area_total"] <= 0, "density"] = pd.NA
-
-	return region_density
 
 
 def _compute_selected_scores(

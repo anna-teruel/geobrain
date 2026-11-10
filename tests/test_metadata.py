@@ -87,3 +87,23 @@ def test_merge_and_add_groups_unmatched_animal_yields_nan_group(metadata_csv):
 	merged, _ = cfg.merge_and_add_groups(df)
 	assert merged.loc[merged["animal"] == "A1", "group_label"].iloc[0] == "control"
 	assert merged.loc[merged["animal"] == "A9", "group_label"].iloc[0] == "nan"
+
+
+def test_merge_numeric_animal_ids(tmp_path):
+	# IDs parsed from filenames are text; numeric metadata IDs must still match.
+	path = tmp_path / "meta.csv"
+	path.write_text("animal,group\n12,a\n13,b\n", encoding="utf-8")
+	df = pd.DataFrame({"animal": ["12", "13"], "objects": [1, 2]})
+	cfg = MetadataConfig(metadata_path=str(path), sep=",", animal_col="animal", group_col="group")
+	merged, _ = cfg.merge_and_add_groups(df)
+	assert list(merged["group_label"]) == ["a", "b"]
+
+
+def test_merge_custom_animal_column(tmp_path):
+	path = tmp_path / "meta.csv"
+	path.write_text("mouse_id,group\nA1,a\nA2,b\n", encoding="utf-8")
+	df = pd.DataFrame({"animal": ["A1", "A2"], "objects": [1, 2]})
+	cfg = MetadataConfig(metadata_path=str(path), sep=",", animal_col="mouse_id", group_col="group")
+	merged, _ = cfg.merge_and_add_groups(df)
+	assert list(merged["group_label"]) == ["a", "b"]
+	assert "mouse_id" not in merged.columns

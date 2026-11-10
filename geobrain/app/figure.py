@@ -1,10 +1,12 @@
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
+from plotly.exceptions import PlotlyError
+from pydantic import BaseModel, Field
 
-from geobrain.build_geoJSON import get_slice_view, mask_to_polygon
+from geobrain.build_geoJSON import slice_regions
 from geobrain.choropleth_render import value_to_color
 from geobrain.colormaps import resolve_name
 from geobrain.coord_system import pixel_scale, slice_index_to_coordinate_mm
@@ -87,10 +89,17 @@ def build_slice_geometry(
 	dims: dict[str, int] = {"w": 0, "h": 0}
 
 	n = len(slice_indices)
-	for i, si in enumerate(slice_indices, start=1):
-		si = int(si)
-		slice_img = get_slice_view(volume, si, orientation)
-		n_rows, n_cols = slice_img.shape
+	slices = slice_regions(
+		volume,
+		slice_indices,
+		orientation,
+		voxel_size_um=voxel_size_um,
+		min_area_px=min_area_px,
+		simplify_px=simplify_px,
+		smooth_sigma=smooth_sigma,
+		polygon_mode=polygon_mode,
+	)
+	for i, (si, (n_rows, n_cols), traced) in enumerate(slices, start=1):
 		dims = _screen_dims(orientation, round(n_rows * sy), round(n_cols * sx))
 
 		try:
@@ -99,26 +108,12 @@ def build_slice_geometry(
 			coord_mm = None
 
 		regions: list[dict[str, Any]] = []
-		unique_ids = np.unique(slice_img)
-		unique_ids = unique_ids[unique_ids != 0]
-
-		for rid in unique_ids:
-			rid = int(rid)
-			geom = mask_to_polygon(
-				mask=(slice_img == rid),
-				min_area_px=min_area_px,
-				simplify_px=simplify_px,
-				polygon_mode=polygon_mode,
-				smooth_sigma=smooth_sigma,
-			)
-			if geom is None:
-				continue
-
+		for rid, geom in traced:
 			rings: list[list[list[float]]] = []
 			for poly in geom.geoms:
 				ring = []
 				for x, y in poly.exterior.coords:
-					px, py = _screen_xy(orientation, x * sx, y * sy)
+					px, py = _screen_xy(orientation, x, y)
 					ring.append([round(float(px), 2), round(float(py), 2)])
 				if len(ring) >= 3:
 					rings.append(ring)
@@ -142,41 +137,71 @@ def build_slice_geometry(
 	return payload, slices_meta
 
 
-def geojson_to_payload(geojson_obj: dict) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+# Schema for an uploaded slice GeoJSON (the shape build_geojson and the app's
+# Save button write). Extra properties are ignored; anything missing or of the
+# wrong type is rejected with the exact field path.
+_Ring = list[tuple[float, float]]  # 2D points only
+_PolygonCoords = Annotated[list[_Ring], Field(min_length=1)]  # [outer, *holes]
+
+
+class _Polygon(BaseModel):
+	type: Literal["Polygon"]
+	coordinates: _PolygonCoords
+
+
+class _MultiPolygon(BaseModel):
+	type: Literal["MultiPolygon"]
+	coordinates: list[_PolygonCoords]
+
+
+class _Properties(BaseModel):
+	region_id: int = Field(alias="Region ID")
+	region_name: str | None = Field(None, alias="Region name")
+	slice_index: int
+	coordinate_mm: float | None = None
+
+
+class _Feature(BaseModel):
+	properties: _Properties
+	geometry: Annotated[_Polygon | _MultiPolygon, Field(discriminator="type")]
+
+
+class SliceGeoJSON(BaseModel):
+	type: Literal["FeatureCollection"]
+	features: list[_Feature]
+
+
+def geojson_to_payload(
+	geojson_obj: SliceGeoJSON,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 	"""Build a geometry payload from a previously saved (lon/lat) GeoJSON.
 
 	Used by the "load processed files" path. The coordinates are the package's
 	pseudo lon/lat (already y-up), so no reversed range is applied (``dims`` is
-	left empty and the figure autoranges).
+	left empty and the figure autoranges). Only outer rings are kept, matching
+	``build_slice_geometry``.
 	"""
 	by_slice: dict[str, list[dict[str, Any]]] = {}
 	seen: dict[int, float | None] = {}
 
-	for feat in geojson_obj.get("features", []):
-		props = feat.get("properties", {})
-		rid = props.get("Region ID")
-		if rid is None:
-			continue
-		si = props.get("slice_index")
-		key = str(int(si)) if si is not None else "0"
-		if si is not None and int(si) not in seen:
-			cm = props.get("coordinate_mm")
-			seen[int(si)] = round(float(cm), 3) if cm is not None else None
+	for feat in geojson_obj.features:
+		props = feat.properties
+		si = props.slice_index
+		if si not in seen:
+			cm = props.coordinate_mm
+			seen[si] = None if cm is None else round(cm, 3)
 
-		geom = feat.get("geometry", {})
-		gtype = geom.get("type")
-		coords = geom.get("coordinates", [])
-		rings: list[list[list[float]]] = []
-		if gtype == "Polygon" and coords:
-			rings.append([[round(float(x), 3), round(float(y), 3)] for x, y in coords[0]])
-		elif gtype == "MultiPolygon":
-			for poly in coords:
-				if poly:
-					rings.append([[round(float(x), 3), round(float(y), 3)] for x, y in poly[0]])
+		geom = feat.geometry
+		polygons = [geom.coordinates] if geom.type == "Polygon" else geom.coordinates
+		rings = [[[round(x, 3), round(y, 3)] for x, y in poly[0]] for poly in polygons]
 		if not rings:
 			continue
-		by_slice.setdefault(key, []).append(
-			{"rid": int(rid), "name": props.get("Region name") or str(int(rid)), "rings": rings}
+		by_slice.setdefault(str(si), []).append(
+			{
+				"rid": props.region_id,
+				"name": props.region_name or str(props.region_id),
+				"rings": rings,
+			}
 		)
 
 	slices_meta = [{"slice_index": si, "coordinate_mm": seen[si]} for si in sorted(seen)]
@@ -204,7 +229,7 @@ def resolve_colorscale(name: str | None, n: int = 21) -> list[list[Any]]:
 
 	try:
 		colors = sample_colorscale(base, points, colortype="rgb")
-	except Exception:
+	except PlotlyError:  # unknown colorscale name
 		colors = sample_colorscale("Aurora", points, colortype="rgb")
 		reverse = False
 
@@ -271,11 +296,6 @@ def build_export_figure(
 	dims = geometry_payload.get("dims")
 	cmap = colorscale or "RdBu_r"
 	colorbar_scale = resolve_name(cmap)  # Handle custom cmaps
-
-	# Auto-range unset limits from the data, matching the live view (render.js).
-	# Without this, density (default range (None, None)) collapses every region
-	# to the colorscale midpoint on export.
-	zmin, zmax = _auto_range(id2value.values(), zmin, zmax)
 
 	# Auto-range unset limits from the data, matching the live view (render.js).
 	# Without this, density (default range (None, None)) collapses every region

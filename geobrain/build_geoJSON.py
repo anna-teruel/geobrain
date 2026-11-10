@@ -4,17 +4,16 @@ Build selected per-slice GeoJSON polygons from an atlas annotation volume.
 
 import json
 import os
-from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 import pandas as pd
 from rasterio.features import shapes
 from scipy.ndimage import gaussian_filter
-from skimage import measure
 from shapely.affinity import scale as scale_geometry
 from shapely.geometry import MultiPolygon, Polygon, mapping, shape
 from shapely.ops import unary_union
+from skimage import measure
 from tqdm.auto import tqdm
 
 from geobrain.coord_system import (
@@ -24,76 +23,6 @@ from geobrain.coord_system import (
 	slice_axis,
 	slice_index_to_coordinate_mm,
 )
-
-
-@dataclass
-class BuildConfig:
-	"""
-	Configuration for building a GeoJSON from selected Allen CCF annotation slices.
-
-	The selected slices can be defined in two ways:
-
-	    1. Explicit coordinate list:
-	        example: coords_mm=[2.0, -2.0, -3.9]
-	    2. Coordinate interval:
-	        example: start_mm=-3.0, end_mm=-2.0
-
-	Args:
-	    out_dir : str
-	        Output directory where the final GeoJSON file is saved.
-	    resolution_um : float, default=25
-	        Isotropic atlas voxel size in microns, e.g. ``Atlas.resolution_um``.
-	    voxel_size_um : tuple[float, float, float] | None, default=None
-	        Per-axis voxel size (AP, DV, LR) for anisotropic atlases, e.g.
-	        ``Atlas.voxel_size_um``. Takes precedence over resolution_um.
-	    orientation : {"coronal", "sagittal", "horizontal"}, default="coronal"
-	        Slice orientation used to extract 2D views from the 3D annotation
-	        volume. Orientation determines which stereotaxic coordinate is used:
-	            coronal    -> AP coordinate
-	            sagittal   -> ML coordinate
-	            horizontal -> DV coordinate
-	    coords_mm : list[float] | None, default=None
-	        Explicit list of stereotaxic coordinates in mm relative to bregma.
-	        Use this for one slice or selected slices.
-	    start_mm : float | None, default=None
-	        Start coordinate in mm for an interval.
-	    end_mm : float | None, default=None
-	        End coordinate in mm for an interval.
-	    step_mm : float | None, default=None
-	        Optional spacing in mm between sampled coordinates.
-	        If None and start_mm/end_mm are provided, all Allen slices in the
-	        interval are included.
-	    min_area_px : float, default=5.0
-	        Minimum polygon/component area in pixels to keep after converting
-	        a region mask into geometry.
-	    simplify_px : float, default=0.8
-	        Polygon simplification tolerance in pixels. Higher values reduce
-	        vertex count and file size, but may reduce boundary detail.
-	    polygon_mode : {"raster", "contour"}, default="contour"
-	        Method used to convert binary masks into polygons.
-	            "raster"  : pixel-boundary polygonization.
-	            "contour" : Gaussian smoothing followed by contour extraction.
-	    smooth_sigma : float, default=1.0
-	        Gaussian smoothing sigma used only when polygon_mode="contour".
-	    geojson_filename : str, default="atlas_slices.geojson"
-	        Name of the output GeoJSON file written to out_dir.
-	"""
-
-	out_dir: str
-	resolution_um: float = 25
-	voxel_size_um: tuple[float, float, float] | None = None
-	orientation: Literal["coronal", "sagittal", "horizontal"] = "coronal"
-
-	coords_mm: list[float] | None = None
-	start_mm: float | None = None
-	end_mm: float | None = None
-	step_mm: float | None = None
-
-	min_area_px: float = 5.0
-	simplify_px: float = 0.8
-	polygon_mode: Literal["raster", "contour"] = "contour"
-	smooth_sigma: float = 1.0
-	geojson_filename: str = "atlas_slices.geojson"
 
 
 def get_slice_view(
@@ -115,14 +44,22 @@ def get_slice_view(
 	Returns:
 	    np.ndarray
 	        2D array representing the selected slice.
+
+	Raises:
+	    ValueError: If orientation is unknown.
+	    IndexError: If index is outside the volume along that axis.
 	"""
-	if orientation == "coronal":
-		return volume[index, :, :]
-	if orientation == "sagittal":
-		return volume[:, :, index]
-	if orientation == "horizontal":
-		return volume[:, index, :]
-	raise ValueError(f"Unknown orientation: {orientation}")
+	try:
+		axis = slice_axis(orientation)
+	except KeyError:
+		raise ValueError(f"Unknown orientation: {orientation}") from None
+	n = volume.shape[axis]
+	# Negative indices would silently wrap to the far end of the atlas.
+	if not 0 <= index < n:
+		raise IndexError(
+			f"Slice index {index} is outside the atlas (0-{n - 1}) for {orientation} slicing."
+		)
+	return volume[(slice(None),) * axis + (index,)]
 
 
 def clean_polygons_geometry(
@@ -318,6 +255,46 @@ def mask_to_polygon(
 	raise ValueError(f"Unknown polygon_mode: {polygon_mode!r}. Choose 'raster' or 'contour'.")
 
 
+def slice_regions(
+	volume: np.ndarray,
+	slice_indices,
+	orientation: str,
+	voxel_size_um: tuple[float, float, float] | None = None,
+	min_area_px: float = 5.0,
+	simplify_px: float = 0.8,
+	smooth_sigma: float = 1.0,
+	polygon_mode: Literal["raster", "contour"] = "contour",
+):
+	"""
+	Yield ``(slice_index, slice_shape, regions)`` for each requested slice.
+
+	``regions`` is a list of ``(region_id, MultiPolygon)`` in slice pixel
+	coordinates (x = column, y = row), stretched by the in-plane voxel sizes
+	when ``voxel_size_um`` is anisotropic. Shared by ``build_geojson`` and the
+	dashboard so both trace regions identically.
+	"""
+	sx, sy = (1.0, 1.0) if voxel_size_um is None else pixel_scale(orientation, voxel_size_um)
+	for si in slice_indices:
+		si = int(si)
+		slice_img = get_slice_view(volume, si, orientation)
+		unique_ids = np.unique(slice_img)
+		regions = []
+		for rid in unique_ids[unique_ids != 0]:  # 0 is background
+			geom = mask_to_polygon(
+				mask=(slice_img == rid),
+				min_area_px=min_area_px,
+				simplify_px=simplify_px,
+				polygon_mode=polygon_mode,
+				smooth_sigma=smooth_sigma,
+			)
+			if geom is None:
+				continue
+			if (sx, sy) != (1.0, 1.0):
+				geom = scale_geometry(geom, xfact=sx, yfact=sy, origin=(0, 0))
+			regions.append((int(rid), geom))
+		yield si, slice_img.shape, regions
+
+
 def scale_cartesian_to_lonlat(
 	geojson_obj: dict,
 	lon_range: tuple[float, float] = (-15.0, 15.0),
@@ -479,18 +456,18 @@ def build_geojson(
 	    volume : np.ndarray
 	        3D Allen CCF annotation volume containing integer structure IDs.
 	    structure_df : pd.DataFrame
-	        Ontology table, e.g. ``Atlas.structure_df`` from ``load_atlas()``.
+	        Ontology table, e.g. ``BrainGlobeAtlas.structure_df`` from ``load_atlas()``.
 	    orientation : {"coronal", "sagittal", "horizontal"}
 	        Slice orientation used when extracting 2D views from the volume.
 	    resolution_um : float, default=25
-	        Isotropic atlas voxel size in microns, e.g. ``Atlas.resolution_um``.
+	        Isotropic atlas voxel size in microns, e.g. ``BrainGlobeAtlas.resolution_um``.
 	    species : str, default="mouse"
-	        Atlas species, e.g. ``Atlas.species``. Bregma-relative
+	        Atlas species, e.g. ``BrainGlobeAtlas.species``. Bregma-relative
 	        coordinates (coords_mm, start_mm/end_mm) are only supported for
 	        "mouse"; other species must select slices with slice_indices, and
 	        their features get ``coordinate_mm=None``.
 	    voxel_size_um : tuple[float, float, float] | None, default=None
-	        Per-axis voxel size (AP, DV, LR), e.g. ``Atlas.voxel_size_um``.
+	        Per-axis voxel size (AP, DV, LR), e.g. ``BrainGlobeAtlas.voxel_size_um``.
 	        Required for anisotropic atlases; takes precedence over
 	        resolution_um. Polygons are stretched by their in-plane voxel sizes
 	        so slices keep their true proportions.
@@ -590,12 +567,8 @@ def build_geojson(
 	# Voxel size along the slicing axis: the one that turns mm into slice
 	# indices (bregma coordinates are mouse-only, whose atlases are isotropic).
 	resolution_um = voxel[slice_axis(orientation)]
-	sx, sy = pixel_scale(orientation, voxel)
 
-	if slice_indices is not None:
-		pass
-
-	elif coords_mm is not None:
+	if coords_mm is not None:
 		slice_indices = [
 			coord_mm_to_slice_index(
 				coord_mm=coord,
@@ -606,7 +579,7 @@ def build_geojson(
 			for coord in coords_mm
 		]
 
-	else:
+	elif slice_indices is None:
 		slice_indices = range_mm_to_slice_indices(
 			start_mm=start_mm,
 			end_mm=end_mm,
@@ -619,40 +592,29 @@ def build_geojson(
 	id2row = structure_df.set_index("id").to_dict(orient="index")
 	all_features: list[dict] = []
 
-	for slice_index in tqdm(slice_indices, desc="Building GeoJSON slices"):
-		slice_img = get_slice_view(volume, slice_index, orientation)
-
+	slices = slice_regions(
+		volume,
+		tqdm(slice_indices, desc="Building GeoJSON slices"),
+		orientation,
+		voxel_size_um=voxel,
+		min_area_px=min_area_px,
+		simplify_px=simplify_px,
+		smooth_sigma=smooth_sigma,
+		polygon_mode=polygon_mode,
+	)
+	for slice_index, _, regions in slices:
 		try:
 			coordinate_mm = slice_index_to_coordinate_mm(
 				slice_index=slice_index,
 				orientation=orientation,
 				resolution_um=resolution_um,
 				species=species,
-			)  # we convert to mm for metadata
+			)
 		except ValueError:  # no bregma for this species (see `_require_mouse`)
 			coordinate_mm = None
 
-		unique_ids = np.unique(slice_img)  # find allen region IDs inside the loaded slice
-		unique_ids = unique_ids[unique_ids != 0]  # exclude the background
-
-		for rid in unique_ids:  # for each region id in all regions in the slice
-			rid = int(rid)
-
-			geom = mask_to_polygon(
-				mask=(slice_img == rid),
-				min_area_px=min_area_px,
-				simplify_px=simplify_px,
-				polygon_mode=polygon_mode,
-				smooth_sigma=smooth_sigma,
-			)  # create a polygon for every region id in each slice
-
-			if geom is None:
-				continue
-			if (sx, sy) != (1.0, 1.0):
-				geom = scale_geometry(geom, xfact=sx, yfact=sy, origin=(0, 0))
-
+		for rid, geom in regions:
 			row = id2row.get(rid, {})
-
 			all_features.append(
 				{
 					"type": "Feature",
@@ -663,7 +625,7 @@ def build_geojson(
 						"Acronym": row.get("acronym"),
 						"parent_structure_id": row.get("parent_structure_id"),
 						"structure_id_path": row.get("structure_id_path"),
-						"slice_index": int(slice_index),
+						"slice_index": slice_index,
 						"coordinate_mm": coordinate_mm,
 						"orientation": orientation,
 						"resolution_um": resolution_um,

@@ -9,10 +9,10 @@ from shapely.geometry import MultiPolygon, Polygon
 
 import geobrain.build_geoJSON as bg
 from geobrain.build_geoJSON import (
-	get_slice_view,
-	clean_polygons_geometry,
-	mask_to_polygon,
 	build_geojson,
+	clean_polygons_geometry,
+	get_slice_view,
+	mask_to_polygon,
 	save_geojson,
 )
 
@@ -217,3 +217,22 @@ def test_build_geojson_from_coords_mm(synthetic_volume, structure_df):
 
 	assert geojson["type"] == "FeatureCollection"
 	assert all(feat["properties"]["slice_index"] == 1 for feat in geojson["features"])
+
+
+@pytest.mark.parametrize("index", [-1, 3])
+def test_get_slice_view_rejects_out_of_range(index):
+	# -1 would otherwise silently return the last slice.
+	with pytest.raises(IndexError):
+		get_slice_view(np.zeros((3, 4, 5)), index, "coronal")
+
+
+def test_geojson_and_app_geometry_trace_same_regions(synthetic_volume, structure_df):
+	from geobrain.app.figure import build_slice_geometry
+
+	gj = build_geojson(synthetic_volume, structure_df, "coronal", slice_indices=[0, 1, 2])
+	payload, _ = build_slice_geometry(synthetic_volume, structure_df, "coronal", 25, [0, 1, 2])
+	from_gj = {
+		(f["properties"]["slice_index"], f["properties"]["Region ID"]) for f in gj["features"]
+	}
+	from_app = {(int(si), r["rid"]) for si, regs in payload["by_slice"].items() for r in regs}
+	assert from_gj == from_app == {(1, 315)}

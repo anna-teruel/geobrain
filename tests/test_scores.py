@@ -6,18 +6,17 @@ import pandas as pd
 import pytest
 
 from geobrain.scores import (
-	find_animal_id,
-	load_refatlas_regions,
 	compute_animal_region_counts,
-	compute_region_counts,
 	compute_reference_stats,
-	relative_abundance,
+	compute_region_counts,
 	consistency_score,
 	density_score,
-	score_table,
+	find_animal_id,
+	load_refatlas_regions,
+	relative_abundance,
 	save_scores,
+	score_table,
 )
-
 
 # --- filename parsing -------------------------------------------------------
 
@@ -157,8 +156,39 @@ def test_consistency_score_frequency(region_by_subject):
 def test_density_score(region_by_subject):
 	out = density_score(region_by_subject)
 	dens = dict(zip(out["Region ID"], out["density"]))
-	assert dens[315] == pytest.approx(30 / 100)
-	assert dens[672] == pytest.approx(10 / 50)
+	# per-animal mean: 315 -> (10 + 20 + 0) / 100 / 3, 672 -> (0 + 4 + 6) / 50 / 3
+	assert dens[315] == pytest.approx(0.1)
+	assert dens[672] == pytest.approx(10 / 150)
+
+
+def test_density_score_does_not_grow_with_group_size():
+	row = {"Region ID": 1, "Region name": "R", "objects": 10, "region_area": 100.0}
+	one = pd.DataFrame([{**row, "animal": "A1"}])
+	two = pd.DataFrame([{**row, "animal": "A1"}, {**row, "animal": "A2"}])
+	assert density_score(one)["density"].iloc[0] == density_score(two)["density"].iloc[0]
+
+
+def test_density_score_skips_zero_area_animal():
+	df = pd.DataFrame(
+		[
+			{
+				"animal": "A1",
+				"Region ID": 1,
+				"Region name": "R",
+				"objects": 10,
+				"region_area": 100.0,
+			},
+			{
+				"animal": "A2",
+				"Region ID": 1,
+				"Region name": "R",
+				"objects": 30,
+				"region_area": 100.0,
+			},
+			{"animal": "A3", "Region ID": 1, "Region name": "R", "objects": 5, "region_area": 0.0},
+		]
+	)
+	assert density_score(df)["density"].iloc[0] == pytest.approx(0.2)
 
 
 def test_density_score_zero_area_is_na():

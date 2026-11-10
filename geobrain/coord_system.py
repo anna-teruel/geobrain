@@ -7,11 +7,18 @@ https://community.brain-map.org/t/how-to-transform-ccf-x-y-z-coordinates-into-st
 
 from dataclasses import dataclass
 from typing import Literal
+
 import numpy as np
 
 Orientation = Literal[
 	"coronal", "sagittal", "horizontal"
 ]  # orientation is only allowed to have one of these 3 values
+
+# Volume axis perpendicular to each section plane (matches get_slice_view).
+_SLICE_AXIS = {"coronal": 0, "horizontal": 1, "sagittal": 2}
+
+# Volume axes along a slice's rows and columns (matches get_slice_view).
+_PLANE_AXES = {"coronal": (1, 2), "horizontal": (0, 2), "sagittal": (0, 1)}
 
 
 def _require_mouse(species: str) -> None:
@@ -42,21 +49,19 @@ def _require_mouse(species: str) -> None:
 
 
 def has_bregma(species: str) -> bool:
-	"""Whether bregma-relative coordinates exist for ``species`` (mouse only)."""
+	"""Whether bregma-relative coordinates exist for ``species`` (mouse only).
+
+	The bregma offsets are curated for the Allen mouse CCF, so they are only
+	meaningful for ``allen_mouse_*`` atlases; the dashboard checks the atlas
+	name too. Library callers using another mouse atlas should select slices
+	by index.
+	"""
 	return species.lower() == "mouse"
-
-
-# Volume axis perpendicular to each section plane (matches get_slice_view).
-_SLICE_AXIS = {"coronal": 0, "horizontal": 1, "sagittal": 2}
 
 
 def slice_axis(orientation: Orientation) -> int:
 	"""Volume axis perpendicular to ``orientation``'s section plane (AP=0, DV=1, LR=2)."""
 	return _SLICE_AXIS[orientation]
-
-
-# Volume axes along a slice's rows and columns (matches get_slice_view).
-_PLANE_AXES = {"coronal": (1, 2), "horizontal": (0, 2), "sagittal": (0, 1)}
 
 
 def slice_plane_axes(orientation: Orientation) -> tuple[int, int]:

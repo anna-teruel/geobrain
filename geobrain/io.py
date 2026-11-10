@@ -47,8 +47,6 @@ def load_atlas(
 
 def load_score(
 	score_csv: str,
-	id_col: str = "Region ID",
-	name_col: str = "Region name",
 ) -> pd.DataFrame:
 	"""
 	Load a region-level score table.
@@ -56,10 +54,6 @@ def load_score(
 	Args:
 	    score_csv : str
 	        Path to a score table file.
-	    id_col : str, default="Region ID"
-	        Column containing Allen structure IDs.
-	    name_col : str, default="Region name"
-	        Column containing region names.
 
 	Returns:
 	    pd.DataFrame

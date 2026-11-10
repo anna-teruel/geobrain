@@ -2,8 +2,8 @@
 Integration of the BrainGlobe atlas API into GeoBrain
 """
 
+import configparser
 import re
-from abc import ABC, abstractmethod
 from functools import cached_property, lru_cache
 
 import numpy as np
@@ -82,11 +82,13 @@ def list_available_atlases() -> pd.DataFrame:
 	"""
 	try:
 		remote = list(list_atlases.get_all_atlases_lastversions())
-	except Exception:  # offline / GitHub unreachable
+	# OSError: offline / no cache; configparser.Error, KeyError: captive-portal
+	# HTML or a corrupt last_versions.conf cache.
+	except (OSError, configparser.Error, KeyError):
 		remote = []
 	try:
 		downloaded = set(list_atlases.get_downloaded_atlases())
-	except Exception:
+	except OSError:
 		downloaded = set()
 	names = set(remote) | downloaded or set(_FALLBACK_ATLASES)
 
@@ -108,60 +110,15 @@ def list_available_atlases() -> pd.DataFrame:
 	return df.sort_values(["species", "atlas", "resolution_um"], ignore_index=True)
 
 
-class Atlas(ABC):
+class BrainGlobeAtlas:
 	"""
-	Adapts one atlas source into the data shape GeoBrain's slice-building
-	pipeline expects.
+	Atlas backed by `brainglobe_atlasapi.BrainGlobeAtlas`, exposing the data
+	GeoBrain's slice-building pipeline needs: name, species, annotation,
+	structure_df, voxel_size_um and resolution_um.
 
-	Subclasses must implement:
-	    name : str
-	        Atlas identifier, e.g. "allen_mouse_25um".
-	    species : str
-	        Common species name ("mouse", ...) used to decide whether
-	        bregma-relative coordinates are available.
-	    annotation : np.ndarray
-	        3D integer structure-ID volume.
-	    structure_df : pd.DataFrame
-	        Ontology table with columns [id, acronym, name,
-	        parent_structure_id, structure_id_path, color_hex_triplet].
-	    voxel_size_um : tuple[float, float, float]
-	        Voxel size in microns along each volume axis (AP, DV, LR).
-	    resolution_um : float
-	        Single voxel size in microns, for isotropic atlases only.
-
-	The annotation volume must use BrainGlobe's standard axis order
-	(ATLAS_ORIENTATION, "asr": axis 0 = AP, axis 1 = DV, axis 2 = LR),
-	which is what get_slice_view and app.figure._screen_xy index by.
-	"""
-
-	@property
-	@abstractmethod
-	def name(self) -> str: ...
-
-	@property
-	@abstractmethod
-	def species(self) -> str: ...
-
-	@property
-	@abstractmethod
-	def annotation(self) -> np.ndarray: ...
-
-	@property
-	@abstractmethod
-	def structure_df(self) -> pd.DataFrame: ...
-
-	@property
-	@abstractmethod
-	def voxel_size_um(self) -> tuple[float, float, float]: ...
-
-	@property
-	@abstractmethod
-	def resolution_um(self) -> float: ...
-
-
-class BrainGlobeAtlas(Atlas):
-	"""
-	Atlas backed by `brainglobe_atlasapi.BrainGlobeAtlas`.
+	The annotation volume uses BrainGlobe's standard axis order
+	(ATLAS_ORIENTATION, "asr": axis 0 = AP, axis 1 = DV, axis 2 = LR), which
+	is what get_slice_view and app.figure._screen_xy index by.
 
 	Args:
 	    atlas_name : str

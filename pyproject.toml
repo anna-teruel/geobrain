@@ -24,13 +24,11 @@ classifiers = [
 ]
 
 dependencies = [
-    "ipykernel",
     "kaleido",
     "numpy",
     "plotly",
     "pandas",
     "scipy",
-    "h5py",
     "rasterio",
     "shapely",
     "scikit-image",
@@ -41,6 +39,7 @@ dependencies = [
     "psutil",
     "tqdm",
     "brainglobe-atlasapi>=3.0.2",
+    "pydantic>=2",
 ]
 
     [project.urls]
@@ -91,6 +90,10 @@ line-length = 100
     docstring-code-format = true
 
 [project.optional-dependencies]
+notebook = [
+    "ipykernel",
+]
+
 test = [
     "pytest",
     "pytest-cov",

@@ -1,6 +1,5 @@
-from geobrain.brainglobe_atlas import Atlas, BrainGlobeAtlas, list_available_atlases
+from geobrain.brainglobe_atlas import BrainGlobeAtlas, list_available_atlases
 from geobrain.build_geoJSON import (
-	BuildConfig,
 	build_geojson,
 	clean_polygons_geometry,
 	get_slice_view,
@@ -14,10 +13,10 @@ from geobrain.coord_system import (
 	atlas_extent_mm,
 	atlas_range_mm_to_slice_indices,
 	coord_mm_to_slice_index,
+	get_ccf_config,
 	has_bregma,
 	labelled_slice_bounds,
 	pixel_scale,
-	get_ccf_config,
 	range_mm_to_slice_indices,
 	slice_axis,
 	slice_index_to_coordinate_mm,
@@ -40,11 +39,9 @@ from geobrain.scores import (
 from geobrain.types import ReferenceMode, RelAbundanceMethod, ScoreName
 
 __all__ = [
-	"Atlas",
 	"BrainGlobeAtlas",
 	"list_available_atlases",
 	"load_atlas",
-	"BuildConfig",
 	"build_geojson",
 	"clean_polygons_geometry",
 	"get_slice_view",

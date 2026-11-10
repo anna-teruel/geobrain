@@ -5,10 +5,10 @@ import pytest
 
 from geobrain.coord_system import (
 	_require_mouse,
-	get_ccf_config,
 	coord_mm_to_slice_index,
-	slice_index_to_coordinate_mm,
+	get_ccf_config,
 	range_mm_to_slice_indices,
+	slice_index_to_coordinate_mm,
 )
 
 

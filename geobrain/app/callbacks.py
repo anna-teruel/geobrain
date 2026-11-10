@@ -12,6 +12,7 @@ import dash_mantine_components as dmc
 import numpy as np
 import pandas as pd
 from dash import ClientsideFunction, Input, Output, State, dcc, no_update, set_props
+from pydantic import ValidationError
 
 import geobrain
 from geobrain.app import cache, figure
@@ -19,11 +20,10 @@ from geobrain.app.layout import (
 	BREGMA_DEFAULT_RANGE,
 	DEFAULT_ATLAS,
 	DEFAULT_ATLAS_NAME,
-	pick_option,
 	atlas_options,
+	pick_option,
 	resolution_options,
 )
-
 
 # Toast levels -> (Mantine color used for the border + icon box, default title,
 # icon glyph). Dual-coded (color *and* glyph) so the level reads without relying
@@ -430,6 +430,7 @@ def register_callbacks(app) -> None:
 		Output("build-geo-btn", "disabled"),
 		Input("load-raw-btn", "n_clicks"),
 		State("resolution-select", "value"),
+		State("session-store", "data"),
 		background=True,
 		running=[
 			(Output("load-raw-btn", "disabled"), True, False),
@@ -437,7 +438,7 @@ def register_callbacks(app) -> None:
 		],
 		prevent_initial_call=True,
 	)
-	def load_raw(n_clicks, atlas_name):
+	def load_raw(n_clicks, atlas_name, old_session_id):
 		if not atlas_name:
 			_notify("Pick an atlas and resolution first.", "warning")
 			return no_update, no_update, no_update
@@ -449,16 +450,23 @@ def register_callbacks(app) -> None:
 			volume = atlas.annotation
 			structure_df = atlas.structure_df
 			voxel_size_um = atlas.voxel_size_um
-			species = atlas.species
+			# Bregma offsets are curated for the Allen mouse CCF only; any other
+			# atlas (even a mouse one, e.g. allen_cord) uses mm from its first slice.
+			coord_species = atlas.species if atlas.name.startswith("allen_mouse") else "none"
 			tissue_bounds = geobrain.labelled_slice_bounds(volume)
 		except Exception as exc:  # download / disk / atlas errors
 			_notify(f"Could not load atlas: {exc}", "error")
 			return no_update, _status("Atlas load failed.", "red"), no_update
+		# Each load starts a fresh session; drop the previous one's volume copy
+		# instead of leaving it on disk until LRU eviction.
+		cache.clear(old_session_id)
 		cache.put(session_id, "volume", volume)
+		# Stored separately so callbacks needing only the shape skip reading the volume.
+		cache.put(session_id, "shape", volume.shape)
 		cache.put(session_id, "structure_df", structure_df)
 		# Per axis (AP, DV, LR): some atlases have anisotropic voxels.
 		cache.put(session_id, "voxel_size_um", voxel_size_um)
-		cache.put(session_id, "species", species)
+		cache.put(session_id, "coord_species", coord_species)
 		cache.put(session_id, "atlas_name", atlas.name)
 		cache.put(session_id, "tissue_bounds", tissue_bounds)
 		status = f"Loaded {atlas.name} - volume {volume.shape}."
@@ -476,9 +484,9 @@ def register_callbacks(app) -> None:
 		prevent_initial_call=True,
 	)
 	def update_slice_range_inputs(session_id, orientation):
-		volume = cache.get(session_id, "volume")
-		species = cache.get(session_id, "species", "mouse")
-		if volume is None:
+		shape = cache.get(session_id, "shape")
+		species = cache.get(session_id, "coord_species", "none")
+		if shape is None:
 			return "Start (mm)", "End (mm)", "", no_update, no_update, no_update
 		if geobrain.has_bregma(species):
 			# Reset too: the previous values may be mm-from-edge of another atlas.
@@ -487,8 +495,8 @@ def register_callbacks(app) -> None:
 
 		axis = geobrain.slice_axis(orientation)
 		res = cache.get(session_id, "voxel_size_um", (25.0, 25.0, 25.0))[axis]
-		extent = geobrain.atlas_extent_mm(volume.shape, orientation, res)
-		lo, hi = cache.get(session_id, "tissue_bounds", ((0, volume.shape[axis] - 1),) * 3)[axis]
+		extent = geobrain.atlas_extent_mm(shape, orientation, res)
+		lo, hi = cache.get(session_id, "tissue_bounds", ((0, shape[axis] - 1),) * 3)[axis]
 		start, end = round(lo * res / 1000.0, 2), round(hi * res / 1000.0, 2)
 		atlas_name = cache.get(session_id, "atlas_name", "This atlas")
 		hint = (
@@ -547,8 +555,9 @@ def register_callbacks(app) -> None:
 		voxel = cache.get(session_id, "voxel_size_um", (25.0, 25.0, 25.0))
 		# Voxel size along the slicing axis: the only one that turns mm into
 		# slice indices (and the only one there is for isotropic atlases).
-		res = voxel[geobrain.slice_axis(orientation)]
-		species = cache.get(session_id, "species", "mouse")
+		axis = geobrain.slice_axis(orientation)
+		res = voxel[axis]
+		species = cache.get(session_id, "coord_species", "none")
 		step = float(step_mm) if step_mm else None
 		try:
 			if geobrain.has_bregma(species):
@@ -575,6 +584,8 @@ def register_callbacks(app) -> None:
 			_notify(f"Invalid slice range: {exc}", "error")
 			return no_update, no_update, no_update, no_update, no_update, no_update
 
+		# Bregma mm can point past the atlas edge; keep only slices that exist.
+		indices = [i for i in indices if 0 <= i < volume.shape[axis]]
 		n = len(indices)
 		if n == 0:
 			set_progress((0, "That range produced no slices."))
@@ -773,13 +784,16 @@ def register_callbacks(app) -> None:
 		if not contents:
 			return (no_update,) * 6 + ("Choose a GeoJSON file to load.", no_update)
 		try:
-			gj = json.loads(_decode_upload(contents).decode("utf-8"))
+			gj = figure.SliceGeoJSON.model_validate_json(_decode_upload(contents))
+			geometry, slices = figure.geojson_to_payload(gj)
 		except Exception as exc:
+			if isinstance(exc, ValidationError):  # name the first bad field, not a wall of text
+				err = exc.errors()[0]
+				exc = f"{'.'.join(map(str, err['loc'])) or 'file'}: {err['msg']}"
 			_notify(f"Could not read GeoJSON: {exc}", "error")
 			return (no_update,) * 6 + (_status(f"Could not read GeoJSON: {exc}", "red"), no_update)
 		if not session_id:
 			session_id = cache.new_session()
-		geometry, slices = figure.geojson_to_payload(gj)
 		if not slices:
 			_notify("No slices found in that GeoJSON.", "warning")
 			return (no_update,) * 6 + ("No slices found in that GeoJSON.", no_update)
@@ -808,6 +822,11 @@ def register_callbacks(app) -> None:
 			return no_update, "Choose a scores CSV to load."
 		try:
 			df = pd.read_csv(io.BytesIO(_decode_upload(contents)))
+			score_cols = set(figure.SCORE_VALUE_COLUMN.values())
+			if "Region ID" not in df.columns or score_cols.isdisjoint(df.columns):
+				raise ValueError(
+					f"expected a 'Region ID' column and at least one of {sorted(score_cols)}"
+				)
 		except Exception as exc:
 			_notify(f"Could not read scores CSV: {exc}", "error")
 			return no_update, _status(f"Could not read scores CSV: {exc}", "red")
@@ -1198,6 +1217,7 @@ def register_callbacks(app) -> None:
 		Input("results-table", "selected_row_ids"),
 		Input("static-color", "value"),
 		Input("static-color-toggle", "checked"),
+		Input("score-columns-store", "data"),
 	)
 
 	app.clientside_callback(
@@ -1212,6 +1232,7 @@ def register_callbacks(app) -> None:
 		Input("scores-store", "data"),
 		Input("slices-store", "data"),
 		Input("color-scheme-toggle", "checked"),
+		Input("score-columns-store", "data"),
 	)
 
 	app.clientside_callback(

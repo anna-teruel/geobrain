@@ -4,9 +4,11 @@ import webbrowser
 from threading import Timer
 
 
+HOST = "127.0.0.1"
+
+
 def main() -> None:
 	parser = argparse.ArgumentParser(description="Launch the GeoBrain dashboard.")
-	parser.add_argument("--host", default="127.0.0.1")
 	parser.add_argument("--port", type=int, default=8050)
 	parser.add_argument("--debug", action="store_true")
 	args = parser.parse_args()
@@ -19,10 +21,10 @@ def main() -> None:
 	# WERKZEUG_RUN_MAIN guard keeps the reloader from opening a new tab on
 	# every hot reload.
 	if not os.environ.get("WERKZEUG_RUN_MAIN"):
-		url = f"http://{args.host}:{args.port}"
+		url = f"http://{HOST}:{args.port}"
 		Timer(1, lambda: webbrowser.open(url)).start()
 
-	app.run(host=args.host, port=args.port, debug=args.debug)
+	app.run(host=HOST, port=args.port, debug=args.debug)
 
 
 if __name__ == "__main__":

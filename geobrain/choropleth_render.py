@@ -2,8 +2,9 @@
 Choropleth rendering of Allen atlas slice GeoJSONs with Plotly.
 """
 
-import pandas as pd
 import math
+
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale

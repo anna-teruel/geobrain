@@ -2,6 +2,7 @@ import dash_mantine_components as dmc
 import plotly.express as px
 from dash import dash_table, dcc, html
 
+from geobrain.app.figure import SCORE_VALUE_COLUMN
 from geobrain.brainglobe_atlas import list_available_atlases
 from geobrain.colormaps import CUSTOM_COLORSCALES
 
@@ -742,6 +743,8 @@ def _stores():
 		dcc.Store(id="scores-store", storage_type="memory"),
 		dcc.Store(id="slices-store", storage_type="memory"),
 		dcc.Store(id="colorscale-stops-store", storage_type="memory"),
+		# Single source for render.js's score -> value column lookup.
+		dcc.Store(id="score-columns-store", data=SCORE_VALUE_COLUMN),
 		dcc.Download(id="download-geojson"),
 		dcc.Download(id="download-scores"),
 	]

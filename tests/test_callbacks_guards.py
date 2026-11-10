@@ -13,6 +13,7 @@ here we cover only the early-return / exception branches the browser flow skips.
 import base64
 import json
 
+import numpy as np
 import pytest
 from dash import no_update
 
@@ -123,6 +124,13 @@ def test_load_cached_scores_bad_csv_toasts_error(callbacks_by_name, toast_ctx):
 	# Empty bytes make pandas raise EmptyDataError.
 	bad = _data_url(b"", mime="text/csv")
 	data, _ = callbacks_by_name["load_cached_scores"](bad, "x.csv")
+	assert data is no_update
+	assert _toast_color(toast_ctx) == "red"
+
+
+def test_load_cached_scores_wrong_columns_toasts_error(callbacks_by_name, toast_ctx):
+	wrong = _data_url(b"name,value\na,1\n", mime="text/csv")
+	data, _ = callbacks_by_name["load_cached_scores"](wrong, "x.csv")
 	assert data is no_update
 	assert _toast_color(toast_ctx) == "red"
 
@@ -306,3 +314,105 @@ def test_export_slice_export_failure_toasts_error(
 	# _status returns a dmc.Text whose first child carries the message.
 	assert "Export failed" in out.children
 	assert _toast_color(toast_ctx) == "red"
+
+
+# --------------------------------------------------------------------------- #
+# load_raw / build_geo - bregma only for Allen mouse, slices clipped to atlas
+# --------------------------------------------------------------------------- #
+
+
+class _FakeAtlas:
+	def __init__(self, name, structure_df):
+		self.name = name
+		self.species = "mouse"
+		self.annotation = np.zeros((3, 30, 30), dtype=np.uint32)
+		self.annotation[1, 5:25, 5:25] = 315
+		self.structure_df = structure_df
+		self.voxel_size_um = (25.0, 25.0, 25.0)
+
+
+@pytest.mark.parametrize(
+	"atlas_name, expected", [("allen_mouse_25um", "mouse"), ("allen_cord_20um", "none")]
+)
+def test_load_raw_bregma_only_for_allen_mouse(
+	callbacks_by_name, monkeypatch, structure_df, atlas_name, expected
+):
+	monkeypatch.setattr(geobrain, "load_atlas", lambda name: _FakeAtlas(name, structure_df))
+	sid, _, _ = callbacks_by_name["load_raw"](1, atlas_name, None)
+	try:
+		assert cache.get(sid, "coord_species") == expected
+	finally:
+		cache.clear(sid)
+
+
+def test_build_geo_drops_slices_outside_atlas(callbacks_by_name, toast_ctx, session, structure_df):
+	atlas = _FakeAtlas("allen_mouse_25um", structure_df)
+	cache.put(session, "volume", atlas.annotation)
+	cache.put(session, "structure_df", structure_df)
+	cache.put(session, "voxel_size_um", atlas.voxel_size_um)
+	cache.put(session, "coord_species", "mouse")
+	# At 25 um bregma is slice 228, so 5.6..6.0 mm spans indices -12..4; only 0-2 exist.
+	result = callbacks_by_name["build_geo"](
+		lambda _: None, 1, session, "coronal", 5.6, 6.0, None, "raster", 5.0, 0.0, 1.0
+	)
+	slices = result[1]
+	assert [s["slice_index"] for s in slices] == [0, 1, 2]
+
+
+# --------------------------------------------------------------------------- #
+# load_cached_geojson - schema validation (pydantic)
+# --------------------------------------------------------------------------- #
+
+
+def _feature(props, geometry):
+	return {"type": "Feature", "properties": props, "geometry": geometry}
+
+
+_SQUARE = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0]]
+
+
+def test_load_cached_geojson_valid_upload(callbacks_by_name, toast_ctx, session):
+	gj = {
+		"type": "FeatureCollection",
+		"features": [
+			_feature(
+				{
+					"Region ID": 315,
+					"Region name": "Isocortex",
+					"slice_index": 4,
+					"coordinate_mm": -2,
+				},
+				{"type": "Polygon", "coordinates": [_SQUARE]},
+			)
+		],
+	}
+	result = callbacks_by_name["load_cached_geojson"](
+		_data_url(json.dumps(gj).encode()), "x.geojson", session
+	)
+	geometry, slices = result[0], result[1]
+	assert slices == [{"slice_index": 4, "coordinate_mm": -2.0}]
+	assert geometry["by_slice"]["4"][0]["rid"] == 315
+
+
+@pytest.mark.parametrize(
+	"props, geometry, field",
+	[
+		({"slice_index": 1}, {"type": "Polygon", "coordinates": [_SQUARE]}, "Region ID"),
+		(
+			{"Region ID": 1, "slice_index": 1},
+			{"type": "Polygon", "coordinates": [[[0, 0, 5], [1, 0, 5], [1, 1, 5]]]},
+			"coordinates",
+		),
+		({"Region ID": 1}, {"type": "Polygon", "coordinates": [_SQUARE]}, "slice_index"),
+	],
+)
+def test_load_cached_geojson_rejects_bad_features(
+	callbacks_by_name, toast_ctx, props, geometry, field
+):
+	gj = {"type": "FeatureCollection", "features": [_feature(props, geometry)]}
+	result = callbacks_by_name["load_cached_geojson"](
+		_data_url(json.dumps(gj).encode()), "x.geojson", None
+	)
+	assert result[0] is no_update
+	assert _toast_color(toast_ctx) == "red"
+	assert field in toast_ctx["notifications-container"]["children"].message

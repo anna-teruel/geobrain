@@ -3,6 +3,7 @@ Metadata loading and grouping utilities.
 """
 
 from dataclasses import dataclass
+
 import pandas as pd
 
 
@@ -50,6 +51,7 @@ class MetadataConfig:
 		meta = pd.read_csv(
 			self.metadata_path,
 			sep=self.sep,
+			dtype=str,  # IDs like "12" must stay text to match IDs parsed from filenames
 		)
 		meta.columns = meta.columns.str.strip()  # remove whitespaces in columns
 		if self.animal_col not in meta.columns:
@@ -105,11 +107,11 @@ class MetadataConfig:
 		meta = self.load()
 
 		if meta is not None:
-			df = df.merge(
-				meta,
-				on=self.animal_col,
-				how="left",
-			)
+			# QUINT-derived tables always call the ID column "animal".
+			meta[self.animal_col] = meta[self.animal_col].str.strip()
+			df = df.merge(meta, left_on="animal", right_on=self.animal_col, how="left")
+			if self.animal_col != "animal":
+				df = df.drop(columns=self.animal_col)
 
 		group_cols = self.group_cols()
 
