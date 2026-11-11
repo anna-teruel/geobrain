@@ -310,3 +310,19 @@ def test_build_geojson_stretches_anisotropic_voxels(structure_df):
 	assert height == pytest.approx(2 * width)
 	assert feat["properties"]["resolution_um"] == 10.0  # along the DV slicing axis
 	assert feat["properties"]["voxel_size_um"] == [20.0, 10.0, 10.0]
+
+
+def test_download_progress_reports_and_restores():
+	"""Inside the block BrainGlobe's fsspec callback reports (done, total) to the
+	handler; afterwards the original callback class is back in place."""
+	from brainglobe_atlasapi import bg_atlas, core
+
+	originals = (bg_atlas.TqdmCallback, core.TqdmCallback)
+	seen = []
+	with atlas_module.download_progress(lambda done, total: seen.append((done, total))):
+		callback = core.TqdmCallback()  # what brainglobe_atlasapi passes to fs.get
+		callback.set_size(2)
+		callback.relative_update(1)
+		callback.relative_update(1)
+	assert seen == [(0, 2), (1, 2), (2, 2)]
+	assert (bg_atlas.TqdmCallback, core.TqdmCallback) == originals

@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 import geobrain
 from geobrain.app import cache, figure
+from geobrain.brainglobe_atlas import download_progress
 from geobrain.app.layout import (
 	BREGMA_DEFAULT_RANGE,
 	DEFAULT_ATLAS,
@@ -151,7 +152,20 @@ def _payload_to_geojson(geometry: dict, slices: list[dict] | None) -> dict:
 	return {"type": "FeatureCollection", "features": features}
 
 
+# Group-select entries that are not a single group; render.js mirrors both names.
 COMBINED_GROUP_LABEL = "All (mean)"
+SIDE_BY_SIDE_LABEL = "Side by side"
+
+
+def _records_for(scores, group):
+	"""Score records behind a group-select choice: one group's records (falling
+	back to the first group, like ``pickRecords`` in render.js), or
+	``{group: records}`` for every real group when side by side is picked."""
+	if not scores:
+		return []
+	if group == SIDE_BY_SIDE_LABEL:
+		return {g: r for g, r in scores.items() if g != COMBINED_GROUP_LABEL}
+	return scores[group if group in scores else next(iter(scores))]
 
 
 def _combine_groups_mean(groups: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -330,10 +344,9 @@ def _data_range(scores, group, score):
 	mirroring ``autoRange`` in assets/render.js. Returns ``(None, None)`` when no
 	data is loaded yet so the inputs simply stay empty.
 	"""
-	if not scores:
-		return None, None
-	group = group if group in scores else next(iter(scores), None)
-	records = scores.get(group) if group else None
+	records = _records_for(scores, group)
+	if isinstance(records, dict):  # side by side: one range across every group
+		records = [row for group_records in records.values() for row in group_records]
 	if not records:
 		return None, None
 	value_col = figure.SCORE_VALUE_COLUMN.get(score)
@@ -432,22 +445,44 @@ def register_callbacks(app) -> None:
 		State("resolution-select", "value"),
 		State("session-store", "data"),
 		background=True,
+		# The spinner runs for the whole load; a download swaps it for the
+		# progress bar via the is-downloading class (see styles.css).
+		progress=[
+			Output("atlas-progress", "value"),
+			Output("atlas-progress-label", "children"),
+			Output("atlas-status", "className"),
+		],
+		progress_default=(0, "", ""),
 		running=[
 			(Output("load-raw-btn", "disabled"), True, False),
 			(Output("step1-loader", "style"), {"display": "block"}, {"display": "none"}),
 		],
 		prevent_initial_call=True,
 	)
-	def load_raw(n_clicks, atlas_name, old_session_id):
+	def load_raw(set_progress, n_clicks, atlas_name, old_session_id):
 		if not atlas_name:
 			_notify("Pick an atlas and resolution first.", "warning")
 			return no_update, no_update, no_update
+
+		last_pct = None
+
+		def _downloading(done, total):
+			# One update per percent: big atlases come as thousands of chunk files.
+			nonlocal last_pct
+			pct = int(100 * done / total) if total else 0
+			if pct != last_pct:
+				last_pct = pct
+				label = f"Downloading {atlas_name}: {done}/{total} files"
+				set_progress((pct, label, "is-downloading"))
+
 		try:
 			session_id = cache.new_session()
 			# BrainGlobe caches the atlas under ~/.brainglobe, so only the
 			# first load of an atlas downloads anything.
-			atlas = geobrain.load_atlas(atlas_name)
-			volume = atlas.annotation
+			with download_progress(_downloading):
+				atlas = geobrain.load_atlas(atlas_name)
+				volume = atlas.annotation
+			set_progress((0, "", ""))  # download (if any) is over: back to the spinner
 			structure_df = atlas.structure_df
 			voxel_size_um = atlas.voxel_size_um
 			# Bregma offsets are curated for the Allen mouse CCF only; any other
@@ -844,6 +879,8 @@ def register_callbacks(app) -> None:
 		if not scores:
 			return [], None
 		keys = list(scores.keys())
+		if COMBINED_GROUP_LABEL in scores:  # i.e. more than one group to compare
+			keys.append(SIDE_BY_SIDE_LABEL)
 		options = [{"label": k, "value": k} for k in keys]
 		default = COMBINED_GROUP_LABEL if COMBINED_GROUP_LABEL in scores else keys[0]
 		return options, default
@@ -877,16 +914,6 @@ def register_callbacks(app) -> None:
 	)
 	def resolve_stops(name):
 		return figure.resolve_colorscale(name)
-
-	@app.callback(
-		Output("results-table", "selected_rows"),
-		Output("results-table", "selected_row_ids"),
-		Input("deselect-all-btn", "n_clicks"),
-		prevent_initial_call=True,
-	)
-	def deselect_all_rows(n_clicks):
-		"""Clear every selected table row (so all regions return to colormap)."""
-		return [], []
 
 	@app.callback(
 		Output("static-color", "disabled"),
@@ -970,61 +997,13 @@ def register_callbacks(app) -> None:
 		return "dark" if dark else "light"
 
 	@app.callback(
-		Output("slice-slider-wrap", "className"),
-		Input("color-scheme-toggle", "checked"),
+		Output("atlas-name-store", "data"),
+		Input("session-store", "data"),
 	)
-	def slider_wrap_theme(dark):
-		"""Tag the slider wrapper so CSS can lighten the tick labels in dark mode.
-
-		The dcc.Slider mark text isn't a Mantine element, so it doesn't re-theme
-		on its own; this class drives the override in styles.css.
-		"""
-		return "slider-dark" if dark else ""
-
-	@app.callback(
-		Output("results-table", "style_header"),
-		Output("results-table", "style_data"),
-		Output("results-table", "style_filter"),
-		Output("results-table", "css"),
-		Input("color-scheme-toggle", "checked"),
-	)
-	def style_table_theme(dark):
-		"""Theme the DataTable (header/data/filter rows) to match the color scheme.
-
-		The DataTable is not a Mantine component, so it does not re-theme on its
-		own - its colors are set explicitly here. The ``css`` prop reaches inner
-		elements that ``style_*`` cannot, such as the filter input's typed text
-		and its "filter data..." placeholder.
-		"""
-		if dark:
-			border = "1px solid #34345a"
-			header = {
-				"fontWeight": "600",
-				"backgroundColor": "#20203b",
-				"color": "#c1c2c5",
-				"border": border,
-			}
-			data = {"backgroundColor": "#191930", "color": "#c1c2c5", "border": border}
-			filt = {"backgroundColor": "#20203b", "color": "#c1c2c5", "border": border}
-			css = [
-				{"selector": ".dash-filter input", "rule": "color: #c1c2c5 !important;"},
-				{
-					"selector": ".dash-filter input::placeholder",
-					"rule": "color: #c1c2c5 !important; opacity: 1;",
-				},
-			]
-		else:
-			border = "1px solid #c1d7f7"
-			header = {
-				"fontWeight": "600",
-				"backgroundColor": "#dde8fb",
-				"color": "#2b3450",
-				"border": border,
-			}
-			data = {"backgroundColor": "white", "color": "#2b3450", "border": border}
-			filt = {"backgroundColor": "#dde8fb", "color": "#2b3450", "border": border}
-			css = []
-		return header, data, filt, css
+	def atlas_name(session_id):
+		"""Name of the session's loaded atlas for the pipeline status (None when the
+		session has no atlas, e.g. it was started from a saved GeoJSON)."""
+		return cache.get(session_id, "atlas_name")
 
 	@app.callback(
 		Output("export-status", "children"),
@@ -1041,7 +1020,7 @@ def register_callbacks(app) -> None:
 		State("export-dir", "value"),
 		State("export-name", "value"),
 		State("export-format", "value"),
-		State("results-table", "selected_row_ids"),
+		State("selected-rids-store", "data"),
 		State("static-color", "value"),
 		State("static-color-toggle", "checked"),
 		prevent_initial_call=True,
@@ -1072,11 +1051,7 @@ def register_callbacks(app) -> None:
 			_notify("Nothing to export yet.", "warning")
 			return "Nothing to export yet."
 
-		if scores:
-			group = group if group in scores else next(iter(scores))
-			records = scores[group]
-		else:
-			records = []
+		records = _records_for(scores, group)
 		slice_index = int(slices[int(slider_val)]["slice_index"])
 		title = f"{score} - slice {slice_index}" if scores else None
 
@@ -1108,6 +1083,96 @@ def register_callbacks(app) -> None:
 
 	@app.callback(
 		Output("export-status", "children", allow_duplicate=True),
+		Output("download-pub", "data"),
+		Input("export-pub-btn", "n_clicks"),
+		State("session-store", "data"),
+		State("scores-store", "data"),
+		State("slices-store", "data"),
+		State("score-select", "value"),
+		State("colorscale-select", "value"),
+		State("zmin-input", "value"),
+		State("zmax-input", "value"),
+		State("export-name", "value"),
+		State("export-format", "value"),
+		State("selected-rids-store", "data"),
+		State("static-color", "value"),
+		State("static-color-toggle", "checked"),
+		State("pub-from", "value"),
+		State("pub-to", "value"),
+		background=True,  # rendering can take a minute; keep the page responsive
+		running=[
+			(Output("export-pub-btn", "loading"), True, False),
+			(Output("export-progress", "value"), 100, 0),
+			(Output("export-progress", "animated"), True, False),
+			(
+				Output("export-progress-label", "children"),
+				"Rendering grid, this can take a minute...",
+				"",
+			),
+		],
+		prevent_initial_call=True,
+	)
+	def export_publication(
+		n_clicks,
+		session_id,
+		scores,
+		slices,
+		score,
+		colorscale,
+		zmin,
+		zmax,
+		name,
+		fmt,
+		selected_ids,
+		static_color,
+		use_flat,
+		lo,
+		hi,
+	):
+		geometry = cache.get(session_id, "geometry")
+		if geometry is None or not slices:
+			_notify("Build or load slices first.", "warning")
+			return "No geometry in memory - build or load slices first.", no_update
+		if lo is None or hi is None:
+			_notify("Enter a From and To value for the grid.", "warning")
+			return "Enter a From and To value.", no_update
+		lo, hi = sorted((lo, hi))
+		# Same rule as the figure's axis: coordinates when every slice has one.
+		use_coords = all(m.get("coordinate_mm") is not None for m in slices)
+		key = "coordinate_mm" if use_coords else "slice_index"
+		chosen = [m for m in slices if lo <= m[key] <= hi]
+		if not chosen:
+			_notify("No slices fall in that range.", "warning")
+			return "No slices fall in that range.", no_update
+
+		groups = {g: r for g, r in (scores or {}).items() if g != COMBINED_GROUP_LABEL}
+		selected, flat = _selected_flat(selected_ids, static_color, use_flat)
+		try:
+			fig = figure.build_publication_figure(
+				geometry,
+				groups,
+				chosen,
+				score,
+				colorscale,
+				zmin,
+				zmax,
+				selected_rids=selected,
+				flat_color=flat,
+			)
+			ext = fmt or "svg"
+			fname = f"{name or 'brain_slice'}_grid.{ext}"
+			if ext == "html":
+				download = dcc.send_string(fig.to_html(), fname)
+			else:
+				download = dcc.send_bytes(fig.to_image(format=ext), fname)
+		except Exception as exc:  # missing kaleido, etc.
+			_notify(f"Export failed: {exc}", "error")
+			return _status(f"Export failed: {exc}", "red"), no_update
+		_notify(f"Downloading {fname}", "success")
+		return _status(f"Downloading {fname}", "green"), download
+
+	@app.callback(
+		Output("export-status", "children", allow_duplicate=True),
 		Input("export-all-btn", "n_clicks"),
 		State("session-store", "data"),
 		State("scores-store", "data"),
@@ -1120,7 +1185,7 @@ def register_callbacks(app) -> None:
 		State("export-dir", "value"),
 		State("export-name", "value"),
 		State("export-format", "value"),
-		State("results-table", "selected_row_ids"),
+		State("selected-rids-store", "data"),
 		State("static-color", "value"),
 		State("static-color-toggle", "checked"),
 		background=True,
@@ -1157,11 +1222,7 @@ def register_callbacks(app) -> None:
 			_notify("Nothing to export yet.", "warning")
 			return "Nothing to export yet."
 
-		if scores:
-			group = group if group in scores else next(iter(scores))
-			records = scores[group]
-		else:
-			records = []
+		records = _records_for(scores, group)
 		orientation = geometry.get("orientation")
 
 		# Match the live view: the row selection narrows coloring and the flat
@@ -1214,7 +1275,7 @@ def register_callbacks(app) -> None:
 		Input("scores-store", "data"),
 		Input("slices-store", "data"),
 		Input("color-scheme-toggle", "checked"),
-		Input("results-table", "selected_row_ids"),
+		Input("selected-rids-store", "data"),
 		Input("static-color", "value"),
 		Input("static-color-toggle", "checked"),
 		Input("score-columns-store", "data"),
@@ -1222,17 +1283,28 @@ def register_callbacks(app) -> None:
 
 	app.clientside_callback(
 		ClientsideFunction(namespace="geobrain", function_name="table"),
-		Output("results-table", "data"),
-		Output("results-table", "columns"),
-		Output("results-table", "style_data_conditional"),
+		Output("results-table", "children"),
 		Input("slice-slider", "value"),
 		Input("score-select", "value"),
 		Input("group-select", "value"),
 		Input("geometry-store", "data"),
 		Input("scores-store", "data"),
 		Input("slices-store", "data"),
-		Input("color-scheme-toggle", "checked"),
 		Input("score-columns-store", "data"),
+		Input("colorscale-stops-store", "data"),
+		Input("zmin-input", "value"),
+		Input("zmax-input", "value"),
+		Input("selected-rids-store", "data"),
+		Input("static-color", "value"),
+		Input("static-color-toggle", "checked"),
+		Input("region-filter", "value"),
+	)
+
+	app.clientside_callback(
+		ClientsideFunction(namespace="geobrain", function_name="clearSelection"),
+		Output("selected-rids-store", "data"),
+		Input("deselect-all-btn", "n_clicks"),
+		prevent_initial_call=True,
 	)
 
 	app.clientside_callback(
@@ -1240,4 +1312,60 @@ def register_callbacks(app) -> None:
 		Output("slice-label", "children"),
 		Input("slice-slider", "value"),
 		Input("slices-store", "data"),
+	)
+
+	app.clientside_callback(
+		ClientsideFunction(namespace="geobrain", function_name="stepSlice"),
+		Output("slice-slider", "value", allow_duplicate=True),
+		Input("slice-prev-btn", "n_clicks"),
+		Input("slice-next-btn", "n_clicks"),
+		State("slice-slider", "value"),
+		State("slice-slider", "min"),
+		State("slice-slider", "max"),
+		prevent_initial_call=True,
+	)
+
+	# Shell chrome: all clientside, so opening a modal or reading the pipeline
+	# status never waits on the server.
+	app.clientside_callback(
+		ClientsideFunction(namespace="geobrain", function_name="openSetup"),
+		Output("setup-modal", "opened"),
+		Output("setup-tabs", "value"),
+		Input("chip-atlas", "n_clicks"),
+		Input("chip-slices", "n_clicks"),
+		Input("chip-scores", "n_clicks"),
+		Input("empty-setup-btn", "n_clicks"),
+		prevent_initial_call=True,
+	)
+
+	app.clientside_callback(
+		ClientsideFunction(namespace="geobrain", function_name="pipeline"),
+		Output("app-root", "className"),
+		Output("chip-atlas-value", "children"),
+		Output("chip-slices-value", "children"),
+		Output("chip-scores-value", "children"),
+		Output("nav-atlas-value", "children"),
+		Output("nav-slices-value", "children"),
+		Output("nav-scores-value", "children"),
+		Input("atlas-name-store", "data"),
+		Input("slices-store", "data"),
+		Input("geometry-store", "data"),
+		Input("scores-store", "data"),
+	)
+
+	app.clientside_callback(
+		ClientsideFunction(namespace="geobrain", function_name="legend"),
+		Output("legend-bar", "style"),
+		Output("legend-min", "children"),
+		Output("legend-max", "children"),
+		Input("colorscale-stops-store", "data"),
+		Input("zmin-input", "value"),
+		Input("zmax-input", "value"),
+	)
+
+	app.clientside_callback(
+		ClientsideFunction(namespace="geobrain", function_name="togglePanel"),
+		Output("regions-panel", "className"),
+		Input("regions-toggle-btn", "n_clicks"),
+		prevent_initial_call=True,
 	)

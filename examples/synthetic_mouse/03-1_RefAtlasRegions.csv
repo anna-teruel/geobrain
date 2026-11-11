@@ -1,0 +1,301 @@
+Region ID;Region name;Object count;Region area
+1;Tuberomammillary nucleus, ventral part;307;113188.0
+4;Inferior colliculus;501;169931.0
+7;Principal sensory nucleus of the trigeminal;401;114848.0
+9;Primary somatosensory area, trunk, layer 6a;120;127237.0
+12;Interfascicular nucleus raphe;226;86055.0
+17;Superior colliculus, motor related, intermediate white layer;18;10778.0
+20;Entorhinal area, lateral part, layer 2;72;24741.0
+22;Posterior parietal association areas;207;144580.0
+26;Superior colliculus, motor related, deep gray layer;88;136687.0
+28;Entorhinal area, lateral part, layer 6a;201;121470.0
+31;Anterior cingulate area;10;22533.0
+35;Oculomotor nucleus;110;163289.0
+38;Paraventricular hypothalamic nucleus;535;149223.0
+41;posteromedial visual area, layer 2/3;91;127942.0
+44;Infralimbic area;75;55056.0
+48;Anterior cingulate area, ventral part;13;152015.0
+51;Intralaminar nuclei of the dorsal thalamus;114;94763.0
+54;medial forebrain bundle;313;160576.0
+58;Medial terminal nucleus of the accessory optic tract;64;47869.0
+62;medial longitudinal fascicle;200;80324.0
+64;Anterodorsal nucleus;729;144347.0
+67;Interstitial nucleus of Cajal;77;37902.0
+72;Anterodorsal preoptic nucleus;44;77590.0
+74;Lateral visual area, layer 6a;83;67486.0
+78;middle cerebellar peduncle;259;171109.0
+83;Inferior olivary complex;225;132342.0
+88;Anterior hypothalamic nucleus;163;182474.0
+93;motor root of the trigeminal nerve;280;97104.0
+96;Dorsal cochlear nucleus;327;139752.0
+98;subependymal zone;230;111670.0
+101;Ventral cochlear nucleus;136;141850.0
+104;Agranular insular area, dorsal part;62;28214.0
+106;Inferior salivatory nucleus;153;68065.0
+111;Agranular insular area, posterior part;148;166753.0
+114;Superior olivary complex, lateral part;71;35599.0
+117;optic chiasm;80;55271.0
+119;Agranular insular area, ventral part;116;174226.0
+121;Lateral visual area, layer 6b;82;37469.0
+123;Koelliker-Fuse subnucleus;291;180740.0
+126;Periventricular hypothalamic nucleus, posterior part;121;146580.0
+128;Midbrain reticular nucleus;36;30336.0
+131;Lateral amygdalar nucleus;121;136271.0
+133;Periventricular hypothalamic nucleus, preoptic part;139;71181.0
+136;Intermediate reticular nucleus;407;101461.0
+139;Entorhinal area, lateral part, layer 5;293;137481.0
+141;Periventricular region;1018;190329.0
+145;fourth ventricle;286;183717.0
+147;Locus ceruleus;44;19154.0
+149;Paraventricular nucleus of the thalamus;10;30677.0
+153;lateral recess;338;153465.0
+155;Lateral dorsal nucleus of thalamus;113;40374.0
+157;Periventricular zone;48;75861.0
+159;Anterior olfactory nucleus;210;113804.0
+163;Agranular insular area, posterior part, layer 2/3;63;39400.0
+165;Midbrain raphe nuclei;208;193813.0
+170;Dorsal part of the lateral geniculate complex;271;116920.0
+173;Retrochiasmatic area;107;47352.0
+178;Ventral part of the lateral geniculate complex;26;87567.0
+181;Nucleus of reuniens;21;117089.0
+186;Lateral habenula;86;59004.0
+188;Accessory olfactory bulb, glomerular layer;177;142274.0
+190;pyramid;819;179800.0
+196;Accessory olfactory bulb, granular layer;159;74681.0
+198;pyramidal decussation;96;42488.0
+202;Medial vestibular nucleus;57;60492.0
+204;Accessory olfactory bulb, mitral layer;199;116108.0
+207;Area postrema;56;107905.0
+210;Lateral mammillary nucleus;22;6771.0
+214;Red nucleus;128;107764.0
+217;Superior vestibular nucleus;42;39520.0
+220;Main olfactory bulb, granule layer;77;135486.0
+223;Arcuate hypothalamic nucleus;347;165149.0
+226;Lateral preoptic area;21;35098.0
+229;sensory root of the trigeminal nerve;390;160113.0
+231;Anterior tegmental nucleus;21;7599.0
+234;Temporal association areas, layer 4;122;106217.0
+236;Main olfactory bulb, mitral layer;60;136724.0
+238;Nucleus raphe pontis;69;45857.0
+242;Lateral septal nucleus;61;160176.0
+244;Main olfactory bulb, outer plexiform layer;243;134852.0
+247;Auditory areas;37;75109.0
+250;Lateral septal nucleus, caudal (caudodorsal) part;24;4309.0
+252;Dorsal auditory area, layer 5;59;23546.0
+255;Anteroventral nucleus of thalamus;444;160905.0
+258;Lateral septal nucleus, rostral (rostroventral) part;101;85403.0
+262;Reticular nucleus of the thalamus;211;168439.0
+266;Lateral septal nucleus, ventral part;356;204412.0
+269;Posterolateral visual area, layer 2/3;129;128674.0
+272;Anteroventral periventricular nucleus;129;150624.0
+275;Lateral septal complex;77;120652.0
+279;Retrosplenial area, lateral agranular part, layer 6b;257;57350.0
+281;Anteromedial visual area, layer 1;30;17289.0
+287;Bed nucleus of the anterior commissure;353;119300.0
+289;Temporal association areas, layer 5;12;57300.0
+292;Bed nucleus of the accessory olfactory tract;3;29765.0
+295;Basolateral amygdalar nucleus;275;108223.0
+298;Magnocellular nucleus;211;132220.0
+302;Superior colliculus, sensory related;164;77831.0
+304;Prelimbic area, layer 2/3;343;113667.0
+307;Magnocellular reticular nucleus;449;237263.0
+311;Basolateral amygdalar nucleus, posterior part;217;136194.0
+314;Agranular insular area, posterior part, layer 6a;441;196756.0
+318;Supragenual nucleus;18;17054.0
+320;Primary motor area, Layer 1;4;34599.0
+322;Primary somatosensory area;19;60968.0
+325;Suprageniculate nucleus;465;108645.0
+327;Basomedial amygdalar nucleus, anterior part;162;149959.0
+329;Primary somatosensory area, barrel field;335;126155.0
+331;Mammillary body;280;215479.0
+333;Septohippocampal nucleus;22;28363.0
+335;Perirhinal area, layer 6a;97;36704.0
+337;Primary somatosensory area, lower limb;195;63989.0
+339;Midbrain, sensory related;13;34246.0
+343;Brain stem;470;141765.0
+345;Primary somatosensory area, mouth;348;97522.0
+348;Midbrain, behavioral state related;304;146025.0
+350;Subceruleus nucleus;129;69108.0
+353;Primary somatosensory area, nose;39;58926.0
+355;Agranular insular area, posterior part, layer 6b;267;59481.0
+358;Sublaterodorsal nucleus;110;53109.0
+362;Mediodorsal nucleus of thalamus;430;188672.0
+364;Parasubthalamic nucleus;107;175123.0
+368;Perirhinal area, layer 6b;87;60313.0
+370;Medulla, motor related;139;136223.0
+374;Substantia nigra, compact part;377;171357.0
+377;Posterolateral visual area, layer 6a;200;86628.0
+379;Medulla, behavioral state related;47;200993.0
+381;Substantia nigra, reticular part;274;54077.0
+385;Primary visual area;36;39893.0
+390;Supraoptic nucleus;59;15271.0
+393;Posterolateral visual area, layer 6b;59;106163.0
+395;Medullary reticular nucleus;16;5633.0
+398;Superior olivary complex;38;32029.0
+401;Anteromedial visual area, layer 4;277;126923.0
+403;Medial amygdalar nucleus;94;91228.0
+407;Field CA1, pyramidal layer;85;47346.0
+412;Orbital area, lateral part, layer 2/3;88;83288.0
+414;Subparafascicular nucleus, magnocellular part;158;212025.0
+417;Rostrolateral visual area;32;173366.0
+422;Subparafascicular nucleus, parvicellular part;60;18945.0
+425;Posterolateral visual area;509;158881.0
+428;medial corticohypothalamic tract;218;93186.0
+430;Retrosplenial area, ventral part, layer 2/3;109;86773.0
+433;Anteromedial visual area, layer 5;102;80377.0
+436;columns of the fornix;366;137855.0
+438;Field CA2, stratum oriens;33;46599.0
+441;Anteromedial visual area, layer 6b;118;121384.0
+443;dorsal hippocampal commissure;315;172774.0
+445;Spinal nucleus of the trigeminal, oral part;129;95722.0
+448;Orbital area, lateral part, layer 1;163;144843.0
+450;Primary somatosensory area, upper limb, layer 1;26;29749.0
+452;Median preoptic nucleus;539;140926.0
+454;Field CA2, stratum radiatum;61;60881.0
+461;Primary somatosensory area, trunk, layer 6b;4;14784.0
+466;alveus;80;59455.0
+469;posteromedial visual area, layer 6b;187;72104.0
+471;Field CA3, stratum lacunosum-moleculare;39;132505.0
+477;Striatum;500;123969.0
+479;Field CA3, stratum lucidum;969;139055.0
+483;Medial habenula;247;79937.0
+485;Striatum dorsal region;637;172308.0
+488;Orbital area, lateral part, layer 6b;12;11356.0
+493;Striatum ventral region;83;70419.0
+500;Somatomotor areas;71;45343.0
+502;Subiculum;166;65333.0
+506;dorsal acoustic stria;379;176338.0
+510;Primary somatosensory area, lower limb, layer 6b;60;23226.0
+514;dorsal column;23;39980.0
+519;Cerebellar nuclei;87;90068.0
+523;Medial preoptic area;79;161159.0
+526;Entorhinal area, medial part, dorsal zone, layer 1;0;3614.0
+528;Cerebellar cortex;186;132469.0
+531;Medial pretectal area;280;174057.0
+534;Supratrigeminal nucleus;92;92768.0
+538;dorsal limb;23;9470.0
+541;Temporal association areas;68;102042.0
+543;Entorhinal area, medial part, dorsal zone, layer 2;384;141554.0
+545;Retrosplenial area, dorsal part, layer 4;195;176169.0
+551;Central amygdalar nucleus, lateral part;12;34345.0
+556;Infralimbic area, layer 2/3;127;138156.0
+558;Primary somatosensory area, nose, layer 1;201;115934.0
+564;Medial septal nucleus;171;141348.0
+566;Postpiriform transition area;192;119142.0
+571;Midline group of the dorsal thalamus;112;140650.0
+574;Tegmental reticular nucleus;380;143110.0
+576;Accessory facial motor nucleus;636;132117.0
+579;external capsule;189;66682.0
+581;Triangular nucleus of septum;283;158360.0
+583;Claustrum;429;121468.0
+588;Anterior cingulate area, ventral part, layer 1;521;133525.0
+590;Retrosplenial area, ventral part, layer 6a;25;23153.0
+593;Primary visual area, layer 1;45;35195.0
+596;Diagonal band nucleus;212;121470.0
+598;Ventral auditory area, layer 6b;251;168237.0
+600;Dorsal auditory area, layer 2/3;329;161048.0
+603;fimbria;11;18394.0
+605;Taenia tecta, ventral part;262;162315.0
+608;Orbital area, ventrolateral part, layer 6a;155;91069.0
+610;Retrosplenial area, dorsal part, layer 5;124;176764.0
+612;Nucleus of the lateral lemniscus;55;85283.0
+614;Tuberal nucleus;326;208511.0
+618;hippocampal commissures;24;39271.0
+620;Orbital area, medial part, layer 5;211;72374.0
+622;Retrosplenial area, ventral part, layer 6b;1374;211479.0
+625;Primary somatosensory area, upper limb, layer 5;890;235058.0
+629;Ventral anterior-lateral complex of the thalamus;58;23825.0
+631;Cortical amygdalar area;75;36648.0
+633;inferior colliculus commissure;5;3550.0
+637;Ventral group of the dorsal thalamus;383;154498.0
+639;Cortical amygdalar area, anterior part;58;68502.0
+643;Posterior auditory area, layer 2/3;96;86173.0
+647;Cortical amygdalar area, posterior part;312;165965.0
+649;Anterolateral visual area, layer 6b;541;144528.0
+653;Abducens nucleus;106;64902.0
+655;Cortical amygdalar area, posterior part, lateral zone;111;81017.0
+657;Primary somatosensory area, mouth, layer 2/3;245;175806.0
+661;Facial motor nucleus;94;81924.0
+663;Cortical amygdalar area, posterior part, medial zone;39;35333.0
+665;lateral olfactory tract, body;538;210735.0
+669;Visual areas;141;115765.0
+671;Retrosplenial area, lateral agranular part, layer 1;180;126652.0
+673;mammillary peduncle;473;181383.0
+677;Visceral area;188;99900.0
+679;Superior central nucleus raphe;377;130426.0
+681;mammillotegmental tract;238;196998.0
+687;Retrosplenial area, ventral part, layer 5;105;212315.0
+689;Ventrolateral preoptic nucleus;9;98159.0
+692;Perirhinal area, layer 5;468;118081.0
+694;Agranular insular area, ventral part, layer 2/3;331;129105.0
+696;Posterior auditory area, layer 1;199;212615.0
+698;Olfactory areas;225;89305.0
+701;Vestibular nuclei;681;192744.0
+703;Cortical subplate;88;66745.0
+706;Olivary pretectal nucleus;227;178358.0
+709;Ventral posterior complex of the thalamus;45;20521.0
+714;Orbital area;170;162414.0
+720;Dorsal column nuclei;71;80553.0
+723;Orbital area, lateral part;428;149314.0
+726;Dentate gyrus;24;35376.0
+728;arbor vitae;61;58391.0
+731;Orbital area, medial part;9;19675.0
+733;Ventral posteromedial nucleus of the thalamus;72;103974.0
+737;postcommissural fornix;315;189606.0
+743;Entorhinal area, medial part, dorsal zone, layer 6;67;38014.0
+746;Orbital area, ventrolateral part;31;49606.0
+750;Posterolateral visual area, layer 1;77;183713.0
+753;principal mammillary tract;357;45764.0
+755;Ventral auditory area, layer 2/3;9;30395.0
+759;Posterior auditory area, layer 4;6;36654.0
+763;Vascular organ of the lamina terminalis;295;126131.0
+767;Secondary motor area, layer 5;58;88556.0
+771;Pons;359;99358.0
+773;Hypoglossal nucleus;9;8906.0
+776;corpus callosum;240;155728.0
+780;Posterior amygdalar nucleus;62;55240.0
+783;Agranular insular area, dorsal part, layer 6a;181;144744.0
+786;Temporal association areas, layer 6b;216;160798.0
+791;Posterior auditory area, layer 5;45;19558.0
+794;spinal tract of the trigeminal nerve;84;60107.0
+797;Zona incerta;269;110215.0
+800;Agranular insular area, ventral part, layer 5;68;41258.0
+803;Pallidum;113;96969.0
+805;posteromedial visual area, layer 1;172;74760.0
+809;Pallidum, caudal region;143;109892.0
+811;Inferior colliculus, central nucleus;127;150512.0
+814;Dorsal peduncular area;93;135043.0
+818;Pallidum, dorsal region;61;75876.0
+820;Inferior colliculus, dorsal nucleus;169;138376.0
+822;Retrohippocampal region;292;163414.0
+826;Pallidum, medial region;825;132987.0
+828;Inferior colliculus, external nucleus;60;142132.0
+831;Agranular insular area, dorsal part, layer 6b;154;92165.0
+834;Superior colliculus, zonal layer;51;114570.0
+836;Ectorhinal area/Layer 1;78;101996.0
+839;Dorsal motor nucleus of the vagus nerve;136;100294.0
+841;trapezoid body;18;63798.0
+843;Parasubiculum;125;86174.0
+846;Dentate nucleus;246;44746.0
+848;optic nerve;475;122199.0
+850;uncinate fascicle;151;122108.0
+852;Parvicellular reticular nucleus;363;173408.0
+856;Thalamus, polymodal association cortex related;279;133664.0
+859;Parasolitary nucleus;54;41905.0
+863;rubrospinal tract;90;45614.0
+866;ventral spinocerebellar tract;109;66875.0
+869;Posterolateral visual area, layer 4;254;156331.0
+873;Supplemental somatosensory area, layer 1;7;8979.0
+877;tectospinal pathway;149;161372.0
+879;Retrosplenial area, dorsal part;124;54073.0
+882;Primary motor area, Layer 6b;428;96441.0
+886;Retrosplenial area, ventral part;43;21297.0
+889;Primary somatosensory area, nose, layer 6a;232;189074.0
+894;Retrosplenial area, lateral agranular part;849;170535.0
+896;thalamus related;178;107501.0
+898;Pontine central gray;74;184885.0
+901;trigeminal nerve;151;107956.0
+903;External cuneate nucleus;238;142894.0
+905;Anterolateral visual area, layer 2/3;44;60908.0
+907;Paracentral nucleus;136;60406.0
+909;Entorhinal area;129;27144.0

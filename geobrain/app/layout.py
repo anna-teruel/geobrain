@@ -1,6 +1,6 @@
 import dash_mantine_components as dmc
 import plotly.express as px
-from dash import dash_table, dcc, html
+from dash import dcc, html
 
 from geobrain.app.figure import SCORE_VALUE_COLUMN
 from geobrain.brainglobe_atlas import list_available_atlases
@@ -38,7 +38,65 @@ REF_MODES = [
 	{"label": "Pooled", "value": "pooled"},
 	{"label": "Group", "value": "group"},
 ]
-EXPORT_FORMATS = [{"label": f, "value": f} for f in ("svg", "png", "pdf", "html")]
+EXPORT_FORMATS = [{"label": f.upper(), "value": f} for f in ("svg", "png", "pdf", "html")]
+
+# Pipeline steps: (key, title, value shown until the step has run). The key ties
+# together a top-bar chip, a setup-modal tab and the `has-<key>` class that
+# render.js `pipeline` puts on #app-root (styles.css turns the dots into checks).
+PIPELINE = [
+	("atlas", "Atlas", "Not loaded"),
+	("slices", "Slices", "Not built"),
+	("scores", "Scores", "Not computed"),
+]
+
+# Palette anchored on the logo: its violet is the primary color, and the dark and
+# gray ramps are tinted towards it so surfaces and borders sit with the mark.
+# In Mantine's dark scheme dark[7] is the body, [6] inputs, [4] borders, [2] dimmed text.
+THEME = {
+	"primaryColor": "brand",
+	"primaryShade": 6,
+	"black": "#17163a",
+	"defaultRadius": "md",
+	"fontFamily": "Inter, system-ui, sans-serif",
+	"colors": {
+		"brand": [
+			"#f1efff",
+			"#e0dcff",
+			"#c0b8ff",
+			"#b0a5ff",
+			"#8f80fa",
+			"#7868f5",
+			"#6554f0",
+			"#5646db",
+			"#4638b8",
+			"#372c94",
+		],
+		"dark": [
+			"#edecfa",
+			"#cfcee6",
+			"#b1b0d2",
+			"#9492be",
+			"#34345c",
+			"#2d2d52",
+			"#262649",
+			"#1b1b38",
+			"#14142b",
+			"#0d0d1f",
+		],
+		"gray": [
+			"#f6f6fc",
+			"#f0effa",
+			"#e6e5f3",
+			"#d6d5ea",
+			"#c9c8e0",
+			"#a9a8c6",
+			"#65648a",
+			"#4a4970",
+			"#2e2d55",
+			"#17163a",
+		],
+	},
+}
 
 
 def pick_option(options, preferred):
@@ -72,681 +130,745 @@ def resolution_options(catalog, atlas):
 	]
 
 
-def _section_title(step: str, title: str):
-	return dmc.Group(
+def _dot(step: int):
+	"""Numbered step marker; becomes a check once its step is done (styles.css)."""
+	return html.Span(str(step), className="gb-dot")
+
+
+def _browse_field(input_id, button_id, label, **input_kwargs):
+	"""Path text input with its native-dialog Browse button."""
+	return dmc.Flex(
 		[
-			dmc.Badge(step, variant="filled", radius="sm", size="lg"),
-			dmc.Text(title, fw=600, size="md"),
+			dmc.TextInput(id=input_id, label=label, style={"flex": 1}, **input_kwargs),
+			dmc.Button("Browse", id=button_id, variant="default"),
 		],
 		gap="xs",
+		align="flex-end",
+		style={"flex": 1},
 	)
 
 
-def _card(children, p="md", **kwargs):
-	return dmc.Card(children, withBorder=True, radius="md", shadow="xs", p=p, **kwargs)
+# setup modal: the three pipeline steps
+def _step(title, blurb, body, status, actions):
+	"""One setup step: its form on top, status/progress and actions pinned below."""
+	return html.Div(
+		[
+			html.Div(
+				[
+					html.Div(
+						[
+							dmc.Text(title, fw=600, size="lg"),
+							dmc.Text(blurb, size="sm", c="dimmed"),
+						]
+					),
+					*body,
+				],
+				className="gb-step-body",
+			),
+			html.Div(
+				[html.Div(status, className="gb-step-status"), dmc.Group(actions, gap="xs")],
+				className="gb-step-foot",
+			),
+		],
+		className="gb-step",
+	)
 
 
-# Steps 1 and 2 share what the logo leaves of the top row, 3:2 in favour of
-# step 1 (flex-basis 0, so the split doesn't depend on their contents). Each
-# scrolls internally; the floors make the whole row scroll on short screens
-# instead of squashing a card to its header.
-STEP1_CARD = {"flex": "3 1 0", "minHeight": 150, "overflowY": "auto"}
-CARD_FILL = {"flex": "2 1 0", "minHeight": 150, "overflowY": "auto"}
-
-# definite column height = viewport minus app chrome (padding 12+12 + header 38+4)
-COL_HEIGHT = "calc(100vh - 66px)"
-
-# Both columns are split into the same two rows: top (logo + steps 1-2 | slice
-# display) and bottom (step 3 | controls + table). Using identical flex rules,
-# column heights and gaps on both sides keeps the rows level by construction,
-# whatever the viewport, zoom or card contents. Each row scrolls internally.
-# The row boxes themselves must be plain wrappers (no padding/border): flexbox
-# scales shrinking by each box's content size, so a padded card on one side
-# would end up a fraction of a pixel off the unpadded box on the other.
-TOP_ROW = {"flex": "1 1 70%", "minHeight": "320px"}
-BOTTOM_ROW = {"flex": "1 1 30%", "minHeight": "320px"}
-ROW_FILL = {"display": "flex", "flexDirection": "column"}
-# A card filling its row wrapper.
-FILL_ROW = {"flex": "1 1 auto", "minHeight": 0}
-COLUMN = {"height": COL_HEIGHT, "overflowY": "auto", "overflowX": "hidden"}
+def _dropzone(upload_id, accept, title):
+	return dcc.Upload(
+		id=upload_id,
+		accept=accept,
+		multiple=False,
+		className="gb-drop",
+		children=[
+			dmc.Text(title, fw=600, size="sm"),
+			dmc.Text(f"Drop a file or click to browse ({accept})", size="xs", c="dimmed"),
+		],
+	)
 
 
-# left panel : processing pipeline
-def _step1_load():
+def _step_atlas():
 	catalog = list_available_atlases()
 	species_opts = species_options(catalog)
 	species = pick_option(species_opts, DEFAULT_SPECIES)
 	atlas_opts = atlas_options(catalog, species)
 	atlas = pick_option(atlas_opts, DEFAULT_ATLAS)
 	res_opts = resolution_options(catalog, atlas)
-	return _card(
-		dmc.Stack(
-			[
-				_section_title("1", "Load atlas"),
-				dmc.Tabs(
-					[
-						dmc.TabsList(
-							[
-								dmc.TabsTab("Load atlas", value="atlas"),
-								dmc.TabsTab("Load processed files", value="processed"),
-							]
-						),
-						dmc.TabsPanel(
-							dmc.Stack(
-								[
-									dmc.Select(
-										id="species-select",
-										label="Species",
-										data=species_opts,
-										value=species,
-										searchable=True,
-										allowDeselect=False,
-									),
-									dmc.Select(
-										id="atlas-select",
-										label="Atlas",
-										data=atlas_opts,
-										value=atlas,
-										searchable=True,
-										allowDeselect=False,
-									),
-									dmc.Select(
-										id="resolution-select",
-										label="Resolution",
-										data=res_opts,
-										value=pick_option(res_opts, DEFAULT_ATLAS_NAME),
-										allowDeselect=False,
-									),
-									dmc.Button("Load atlas", id="load-raw-btn", fullWidth=True),
-									dmc.Group(
-										[
-											dmc.Loader(
-												id="step1-loader",
-												size="sm",
-												style={"display": "none"},
-											),
-											dmc.Text(id="step1-status", size="sm", c="dimmed"),
-										],
-										gap="xs",
-									),
-								],
-								gap="sm",
-								pt="sm",
-							),
-							value="atlas",
-						),
-						dmc.TabsPanel(
-							dmc.Stack(
-								[
-									dcc.Upload(
-										id="upload-geojson",
-										accept=".geojson,.json",
-										multiple=False,
-										children=dmc.Button(
-											"Load GeoJSON", variant="light", fullWidth=True
-										),
-									),
-									dcc.Upload(
-										id="upload-scores",
-										accept=".csv",
-										multiple=False,
-										children=dmc.Button(
-											"Load scores", variant="light", fullWidth=True
-										),
-									),
-									dmc.Text(id="load-cached-status", size="xs", c="dimmed"),
-								],
-								gap="sm",
-								pt="sm",
-							),
-							value="processed",
-						),
-					],
-					value="atlas",
-				),
-			],
-			gap="sm",
-		),
-		style=STEP1_CARD,
-	)
-
-
-def _step2_geojson():
-	return _card(
-		dmc.Stack(
-			[
-				_section_title("2", "Build slice GeoJSONs"),
-				dmc.Select(
-					id="orientation-select",
-					label="Orientation",
-					data=ORIENTATIONS,
-					value="coronal",
-					allowDeselect=False,
-				),
-				dmc.Group(
-					[
-						dmc.NumberInput(
-							id="geo-start",
-							label="Start (mm)",
-							value=BREGMA_DEFAULT_RANGE[0],
-							step=0.1,
-							w="31%",
-						),
-						dmc.NumberInput(
-							id="geo-end",
-							label="End (mm)",
-							value=BREGMA_DEFAULT_RANGE[1],
-							step=0.1,
-							w="31%",
-						),
-						dmc.NumberInput(
-							id="geo-step",
-							label="Step (mm)",
-							value=BREGMA_DEFAULT_RANGE[2],
-							min=0.0,
-							step=0.05,
-							w="31%",
-						),
-					],
-					grow=True,
-					gap="xs",
-				),
-				dmc.Text(id="geo-range-hint", size="xs", c="dimmed"),
-				dmc.Accordion(
-					value=None,
-					children=dmc.AccordionItem(
+	return _step(
+		"Atlas",
+		"Choose a BrainGlobe atlas, or reopen files saved from an earlier session.",
+		[
+			dmc.Tabs(
+				[
+					dmc.TabsList(
 						[
-							dmc.AccordionControl("Advanced build options"),
-							dmc.AccordionPanel(
+							dmc.TabsTab("BrainGlobe atlas", value="atlas"),
+							dmc.TabsTab("Saved files", value="processed"),
+						]
+					),
+					dmc.TabsPanel(
+						dmc.SimpleGrid(
+							[
+								dmc.Select(
+									id="species-select",
+									label="Species",
+									data=species_opts,
+									value=species,
+									searchable=True,
+									allowDeselect=False,
+								),
+								dmc.Select(
+									id="atlas-select",
+									label="Atlas",
+									data=atlas_opts,
+									value=atlas,
+									searchable=True,
+									allowDeselect=False,
+								),
+								dmc.Select(
+									id="resolution-select",
+									label="Resolution",
+									data=res_opts,
+									value=pick_option(res_opts, DEFAULT_ATLAS_NAME),
+									allowDeselect=False,
+								),
+							],
+							cols=3,
+							spacing="sm",
+						),
+						value="atlas",
+						pt="md",
+					),
+					dmc.TabsPanel(
+						dmc.Stack(
+							[
 								dmc.SimpleGrid(
 									[
-										dmc.Select(
-											id="polygon-mode-select",
-											label="Polygon mode",
-											data=POLYGON_MODES,
-											value="contour",
-											allowDeselect=False,
+										_dropzone(
+											"upload-geojson", ".geojson,.json", "Slice GeoJSON"
 										),
-										dmc.NumberInput(
-											id="min-area-px",
-											label="Min area (px)",
-											value=5.0,
-											step=1.0,
-										),
-										dmc.NumberInput(
-											id="simplify-px",
-											label="Simplify (px)",
-											value=0.8,
-											step=0.1,
-										),
-										dmc.NumberInput(
-											id="smooth-sigma",
-											label="Smooth sigma",
-											value=1.0,
-											step=0.1,
-										),
+										_dropzone("upload-scores", ".csv", "Scores"),
 									],
 									cols=2,
-									spacing="xs",
-									verticalSpacing="xs",
-								)
-							),
-						],
-						value="adv",
-					),
-				),
-				dmc.Group(
-					[
-						dmc.Button(
-							"Build GeoJSONs", id="build-geo-btn", disabled=True, style={"flex": 1}
+									spacing="sm",
+								),
+								dmc.Text(
+									"Loading saved files skips the Slices and Scores steps.",
+									size="xs",
+									c="dimmed",
+								),
+								dmc.Text(id="load-cached-status", size="sm", c="dimmed"),
+							],
+							gap="xs",
 						),
-						dmc.Button("Save", id="save-geo-btn", variant="light", disabled=True),
-					],
-					gap="xs",
-				),
-				dmc.Progress(id="geo-progress", value=0, animated=False, striped=True),
-				dmc.Text(id="geo-progress-label", size="xs", c="dimmed"),
-			],
-			gap="sm",
-		),
-		style=CARD_FILL,
-	)
-
-
-def _step3_scores():
-	return _card(
-		dmc.Stack(
-			[
-				_section_title("3", "Compute region scores"),
-				dmc.Grid(
-					[
-						dmc.GridCol(
-							dmc.Flex(
-								[
-									dmc.TextInput(
-										id="score-data-dir",
-										label="QUINT data folder",
-										placeholder="path to *_RefAtlasRegions.csv",
-										debounce=500,
-										style={"flex": 1},
-									),
-									dmc.Button(
-										"Browse",
-										id="browse-data-dir-btn",
-										variant="light",
-									),
-								],
-								gap="xs",
-								align="flex-end",
-							),
-							span=9,
-						),
-						dmc.GridCol(
-							dmc.TextInput(
-								id="score-sep",
-								label="Separator",
-								value="auto",
-								placeholder="auto",
-							),
-							span=3,
-						),
-						dmc.GridCol(
-							dmc.Flex(
-								[
-									dmc.TextInput(
-										id="metadata-path",
-										label="Metadata CSV",
-										placeholder="path to metadata csv",
-										debounce=500,
-										style={"flex": 1},
-									),
-									dmc.Button(
-										"Browse",
-										id="browse-metadata-btn",
-										variant="light",
-									),
-								],
-								gap="xs",
-								align="flex-end",
-							),
-							span=9,
-						),
-						dmc.GridCol(
-							dmc.TextInput(
-								id="metadata-sep",
-								label="Separator",
-								value=";",
-							),
-							span=3,
-						),
-					],
-					gap="xs",
-				),
-				dmc.Accordion(
-					value=None,
-					children=dmc.AccordionItem(
-						[
-							dmc.AccordionControl("Grouping"),
-							dmc.AccordionPanel(
-								dmc.Stack(
-									[
-										dmc.SimpleGrid(
-											[
-												dmc.TextInput(
-													id="animal-col",
-													label="Animal column",
-													value="animal",
-												),
-												dmc.TextInput(
-													id="group-col",
-													label="Group column(s)",
-													value="group",
-												),
-												dmc.Select(
-													id="rel-method-select",
-													label="Rel. abundance method",
-													data=REL_METHODS,
-													value="within",
-													allowDeselect=False,
-												),
-												dmc.Select(
-													id="ref-mode-select",
-													label="Reference mode",
-													data=REF_MODES,
-													value="pooled",
-													allowDeselect=False,
-												),
-											],
-											cols=2,
-											spacing="xs",
-											verticalSpacing="xs",
-										),
-										dmc.TextInput(
-											id="ref-group",
-											label="Reference group (if mode=group)",
-										),
-									],
-									gap="xs",
-								)
-							),
-						],
-						value="meta",
-					),
-				),
-				dmc.Group(
-					[
-						dmc.Button(
-							"Compute scores",
-							id="process-data-btn",
-							disabled=True,
-							style={"flex": 1},
-						),
-						dmc.Button("Save", id="save-scores-btn", variant="light", disabled=True),
-					],
-					gap="xs",
-				),
-				dmc.Progress(id="score-progress", value=0, animated=False, striped=True),
-				dmc.Text(id="score-progress-label", size="xs", c="dimmed"),
-			],
-			gap="sm",
-		),
-		style={**FILL_ROW, "overflowY": "auto"},
-	)
-
-
-def _header():
-	return dmc.Group(
-		[
-			dmc.Badge("dashboard", variant="light", color="grape"),
-			dmc.Group(
-				[
-					dmc.Button(
-						"Clear",
-						id="clear-cache-btn",
-						variant="light",
-						color="red",
-					),
-					dmc.Switch(
-						id="color-scheme-toggle",
-						size="xl",
-						checked=True,
-						onLabel="🌙",
-						offLabel="☀️",
-						styles={
-							"track": {"cursor": "pointer"},
-							"trackLabel": {"fontSize": "1.2rem"},
-						},
+						value="processed",
+						pt="md",
 					),
 				],
-				gap="sm",
-				align="center",
+				value="atlas",
+				variant="pills",
 			),
 		],
-		justify="space-between",
-		align="center",
-		h=38,
-		style={"marginBottom": "4px"},
+		# While an atlas downloads, load_raw's progress puts is-downloading on
+		# this box: styles.css then shows the bar and its label instead of the
+		# spinner, which covers reading an atlas that is already on disk.
+		html.Div(
+			[
+				dmc.Group(
+					[
+						dmc.Loader(id="step1-loader", size="sm", style={"display": "none"}),
+						dmc.Text(id="step1-status", size="xs", c="dimmed"),
+					],
+					gap="xs",
+				),
+				dmc.Text(id="atlas-progress-label", size="xs", c="dimmed"),
+				dmc.Progress(id="atlas-progress", value=0, animated=True, striped=True),
+			],
+			id="atlas-status",
+		),
+		[dmc.Button("Load atlas", id="load-raw-btn")],
 	)
 
 
-def _left_panel():
-	return dmc.Stack(
+def _step_slices():
+	return _step(
+		"Slices",
+		"Cut the atlas into region outlines at regular positions.",
 		[
 			dmc.Stack(
 				[
-					html.Img(
-						src="/assets/GeoBrain_logo2.png",
-						style={
-							"width": "100%",
-							"maxWidth": "300px",
-							"height": "auto",
-							"display": "block",
-							"margin": "0 auto",
-							"flex": "0 0 auto",
-						},
-						alt="GeoBrain logo",
+					dmc.Text("Orientation", size="sm", fw=500),
+					dmc.SegmentedControl(
+						id="orientation-select", data=ORIENTATIONS, value="coronal"
 					),
-					_step1_load(),
-					_step2_geojson(),
 				],
-				gap="md",
-				# Short screens: this row scrolls rather than squashing step 2.
-				style={**TOP_ROW, "overflowY": "auto", "overflowX": "hidden"},
+				gap=4,
+				align="flex-start",
 			),
-			html.Div(_step3_scores(), style={**BOTTOM_ROW, **ROW_FILL}),
+			dmc.SimpleGrid(
+				[
+					dmc.NumberInput(
+						id="geo-start",
+						label="Start (mm)",
+						value=BREGMA_DEFAULT_RANGE[0],
+						step=0.1,
+					),
+					dmc.NumberInput(
+						id="geo-end",
+						label="End (mm)",
+						value=BREGMA_DEFAULT_RANGE[1],
+						step=0.1,
+					),
+					dmc.NumberInput(
+						id="geo-step",
+						label="Step (mm)",
+						value=BREGMA_DEFAULT_RANGE[2],
+						min=0.0,
+						step=0.05,
+					),
+				],
+				cols=3,
+				spacing="sm",
+			),
+			dmc.Text(id="geo-range-hint", size="xs", c="dimmed"),
+			dmc.Accordion(
+				value=None,
+				children=dmc.AccordionItem(
+					[
+						dmc.AccordionControl("Advanced build options"),
+						dmc.AccordionPanel(
+							dmc.SimpleGrid(
+								[
+									dmc.Select(
+										id="polygon-mode-select",
+										label="Polygon mode",
+										data=POLYGON_MODES,
+										value="contour",
+										allowDeselect=False,
+									),
+									dmc.NumberInput(
+										id="min-area-px",
+										label="Min area (px)",
+										value=5.0,
+										step=1.0,
+									),
+									dmc.NumberInput(
+										id="simplify-px",
+										label="Simplify (px)",
+										value=0.8,
+										step=0.1,
+									),
+									dmc.NumberInput(
+										id="smooth-sigma",
+										label="Smooth sigma",
+										value=1.0,
+										step=0.1,
+									),
+								],
+								cols=4,
+								spacing="sm",
+							)
+						),
+					],
+					value="adv",
+				),
+			),
 		],
-		gap="md",
-		style=COLUMN,
+		[
+			dmc.Text(id="geo-progress-label", size="xs", c="dimmed"),
+			dmc.Progress(id="geo-progress", value=0, animated=False, striped=True),
+		],
+		[
+			dmc.Button("Save GeoJSON", id="save-geo-btn", variant="default", disabled=True),
+			dmc.Button("Build slices", id="build-geo-btn", disabled=True),
+		],
 	)
 
 
-# right panel: figure, controls, table
-def _brain_graph():
-	return _card(
-		dmc.Stack(
-			[
-				# The figure takes all remaining height (minHeight:0 lets it shrink
-				# within the flex column); the slice slider sits pinned at the bottom.
-				html.Div(
-					dcc.Graph(
-						id="brain-graph",
-						style={"height": "100%", "width": "100%"},
-						config={
-							"displaylogo": False,
-							"scrollZoom": True,
-							"modeBarButtonsToRemove": ["select2d", "lasso2d"],
-						},
+def _step_scores():
+	return _step(
+		"Region scores",
+		"Point to the QUINT output and the animal metadata to compute a score per region.",
+		[
+			dmc.Flex(
+				[
+					_browse_field(
+						"score-data-dir",
+						"browse-data-dir-btn",
+						"QUINT data folder",
+						placeholder="Folder with *_RefAtlasRegions.csv",
+						debounce=500,
 					),
-					style={"flex": "1 1 auto", "minHeight": 0},
-				),
-				html.Div(
-					dcc.Slider(
-						id="slice-slider",
-						min=0,
-						max=0,
-						step=1,
-						value=0,
-						updatemode="drag",
-						included=False,
-						marks={},
-						allow_direct_input=False,
+					dmc.TextInput(
+						id="score-sep", label="Separator", value="auto", placeholder="auto", w=96
 					),
-					id="slice-slider-wrap",
-				),
-				dmc.Text(id="slice-label", size="xs", c="dimmed", ta="center"),
-			],
-			gap="xs",
-			style={"height": "100%"},
-		),
-		p="xs",
-		# The graph takes ~70% of the column so the lower Flex below it roughly lines
-		# up with the left column's step-3 card. A px floor (not 58vh) avoids forcing
-		# overflow; it still drives the column's scroll fallback on very short screens.
-		style=FILL_ROW,
-	)
-
-
-def _controls_panel():
-	return _card(
-		dmc.Stack(
-			[
-				dmc.Text("Score", fw=600, size="sm"),
-				dmc.SegmentedControl(
-					id="score-select", data=SCORES, value="rel_abundance", fullWidth=True
-				),
-				dmc.Select(
-					id="group-select", label="Group", data=[], placeholder="-", clearable=False
-				),
-				dmc.Group(
+				],
+				gap="xs",
+				align="flex-end",
+			),
+			dmc.Flex(
+				[
+					_browse_field(
+						"metadata-path",
+						"browse-metadata-btn",
+						"Metadata CSV",
+						placeholder="Path to the metadata .csv",
+						debounce=500,
+					),
+					dmc.TextInput(id="metadata-sep", label="Separator", value=";", w=96),
+				],
+				gap="xs",
+				align="flex-end",
+			),
+			dmc.Accordion(
+				value=None,
+				children=dmc.AccordionItem(
 					[
-						dmc.Select(
-							id="colorscale-select",
-							label="Colorscale",
-							data=COLORSCALES,
-							value="Aurora",
-							style={"flex": 1},
-							allowDeselect=False,
-						),
-						dmc.NumberInput(id="zmin-input", label="zmin", value=-3.0, step=0.5, w=68),
-						dmc.NumberInput(id="zmax-input", label="zmax", value=3.0, step=0.5, w=68),
-						dmc.Switch(
-							id="static-color-toggle",
-							checked=True,
-							size="sm",
-							style={"marginBottom": 8},
-						),
-						dmc.ColorInput(
-							id="static-color",
-							label="Flat",
-							value="#fa5252",
-							format="hex",
-							w=110,
+						dmc.AccordionControl("Grouping"),
+						dmc.AccordionPanel(
+							dmc.SimpleGrid(
+								[
+									dmc.TextInput(
+										id="animal-col", label="Animal column", value="animal"
+									),
+									dmc.TextInput(
+										id="group-col", label="Group column(s)", value="group"
+									),
+									dmc.Select(
+										id="rel-method-select",
+										label="Rel. abundance method",
+										data=REL_METHODS,
+										value="within",
+										allowDeselect=False,
+									),
+									dmc.Select(
+										id="ref-mode-select",
+										label="Reference mode",
+										data=REF_MODES,
+										value="pooled",
+										allowDeselect=False,
+									),
+									dmc.TextInput(
+										id="ref-group", label="Reference group (if mode=group)"
+									),
+								],
+								cols=3,
+								spacing="sm",
+							)
 						),
 					],
-					gap="xs",
-					align="flex-end",
+					value="meta",
 				),
-				dmc.Divider(label="Export", labelPosition="center"),
-				dmc.Group(
+			),
+		],
+		[
+			dmc.Text(id="score-progress-label", size="xs", c="dimmed"),
+			dmc.Progress(id="score-progress", value=0, animated=False, striped=True),
+		],
+		[
+			dmc.Button("Save CSV", id="save-scores-btn", variant="default", disabled=True),
+			dmc.Button("Compute scores", id="process-data-btn", disabled=True),
+		],
+	)
+
+
+def _setup_modal():
+	return dmc.Modal(
+		dmc.Tabs(
+			[
+				dmc.TabsList(
 					[
-						dmc.Flex(
-							[
-								dmc.TextInput(
-									id="export-dir",
-									label="Output folder",
-									value=".",
-									style={"flex": 1},
+						*[
+							dmc.TabsTab(
+								html.Div(
+									[
+										dmc.Text(title, fw=600, size="sm"),
+										dmc.Text(
+											empty, id=f"nav-{step}-value", size="xs", c="dimmed"
+										),
+									]
 								),
-								dmc.Button("Browse", id="browse-export-dir-btn", variant="light"),
-							],
-							gap="xs",
-							align="flex-end",
-							style={"flex": 1},
+								value=step,
+								leftSection=_dot(i),
+								className=f"gb-step-{step}",
+							)
+							for i, (step, title, empty) in enumerate(PIPELINE, start=1)
+						],
+						dmc.Button(
+							"Clear session",
+							id="clear-cache-btn",
+							variant="subtle",
+							color="red",
+							justify="flex-start",
+							mt="auto",
 						),
-						dmc.TextInput(
-							id="export-name", label="File name", value="brain_slice", w=120
-						),
-						dmc.Select(
-							id="export-format",
-							label="Format",
-							data=EXPORT_FORMATS,
-							value="svg",
-							w=92,
-							allowDeselect=False,
-						),
-					],
-					gap="xs",
-					align="flex-end",
-					wrap="nowrap",
+					]
+				),
+				dmc.TabsPanel(_step_atlas(), value="atlas"),
+				dmc.TabsPanel(_step_slices(), value="slices"),
+				dmc.TabsPanel(_step_scores(), value="scores"),
+			],
+			id="setup-tabs",
+			value="atlas",
+			orientation="vertical",
+			className="gb-setup",
+		),
+		id="setup-modal",
+		title="Data setup",
+		size=880,
+		centered=True,
+		# Mounted while closed so every callback can reach the step controls, and
+		# inline (no portal) so the has-<step> classes on #app-root reach the nav dots.
+		keepMounted=True,
+		withinPortal=False,
+		styles={
+			"body": {"padding": 0},
+			"header": {"borderBottom": "1px solid var(--gb-line)"},
+			"title": {"fontWeight": 600},
+		},
+	)
+
+
+def _popover(trigger, body, width):
+	"""Dropdown under a top-bar/toolbar button.
+
+	Plain markup, always in the DOM, opened and closed by a delegated click
+	handler in render.js (the ``is-open`` class on the wrapper). Mantine's Popover
+	mounts its content a moment after first paint, and a control that mounts after
+	a callback has updated it shows its original layout value instead.
+	"""
+	return html.Div(
+		[trigger, html.Div(body, className="gb-pop", style={"width": width})],
+		className="gb-popwrap",
+	)
+
+
+# top bar: brand, pipeline status, global actions
+def _export_popover():
+	return _popover(
+		dmc.Button("Export", id="export-open-btn"),
+		dmc.Stack(
+			[
+				dmc.Text("Export figure", fw=600, size="sm"),
+				_browse_field("export-dir", "browse-export-dir-btn", "Output folder", value="."),
+				dmc.TextInput(id="export-name", label="File name", value="brain_slice"),
+				dmc.SegmentedControl(
+					id="export-format", data=EXPORT_FORMATS, value="svg", fullWidth=True
 				),
 				dmc.Group(
 					[
-						dmc.Button("Export current slice", id="export-btn", variant="light"),
-						dmc.Button("Export all slices", id="export-all-btn", variant="light"),
+						dmc.Button("All slices", id="export-all-btn", variant="default"),
+						dmc.Button("This slice", id="export-btn"),
 					],
 					grow=True,
 					gap="xs",
 				),
+				dmc.Divider(),
+				dmc.Text("Publication grid", fw=600, size="sm"),
+				dmc.Text(
+					"Rows = groups, columns = slices in the range. Range is in mm from "
+					"bregma, or slice index when the atlas has no bregma.",
+					size="xs",
+					c="dimmed",
+				),
+				dmc.Group(
+					[
+						dmc.NumberInput(id="pub-from", label="From", step=0.5),
+						dmc.NumberInput(id="pub-to", label="To", step=0.5),
+					],
+					grow=True,
+					gap="xs",
+				),
+				dmc.Button("Export grid", id="export-pub-btn", variant="default"),
 				dmc.Progress(id="export-progress", value=0, animated=False, striped=True),
 				dmc.Text(id="export-progress-label", size="xs", c="dimmed"),
 				dmc.Text(id="export-status", size="xs", c="dimmed"),
 			],
 			gap="sm",
 		),
-		style={"height": "100%", "overflowY": "auto"},
+		340,
 	)
 
 
-def _table_panel():
-	return _card(
+def _header():
+	return html.Header(
+		[
+			html.Div(
+				[
+					html.Img(src="/assets/GeoBrain_mark.png", alt="", className="gb-mark"),
+					html.Span("GeoBrain"),
+				],
+				className="gb-brand",
+			),
+			html.Nav(
+				[
+					html.Button(
+						[
+							_dot(i),
+							html.Span(title, className="gb-chip-label"),
+							html.Span(empty, id=f"chip-{step}-value"),
+						],
+						id=f"chip-{step}",
+						className=f"gb-chip gb-step-{step}",
+					)
+					for i, (step, title, empty) in enumerate(PIPELINE, start=1)
+				],
+				className="gb-pipe",
+				**{"aria-label": "Data pipeline"},
+			),
+			dmc.Group(
+				[
+					dmc.ActionIcon(
+						html.Span(className="gb-icon-panel"),
+						id="regions-toggle-btn",
+						variant="subtle",
+						color="gray",
+						size="lg",
+						**{"aria-label": "Toggle regions panel"},
+					),
+					dmc.Switch(
+						id="color-scheme-toggle",
+						size="lg",
+						color="gray",
+						checked=True,
+						onLabel="🌙",
+						offLabel="☀️",
+						styles={"track": {"cursor": "pointer"}, "trackLabel": {"fontSize": "1rem"}},
+						**{"aria-label": "Dark theme"},
+					),
+					_export_popover(),
+				],
+				gap="sm",
+				ml="auto",
+			),
+		],
+		className="gb-top",
+	)
+
+
+# stage: the slice figure with its view controls
+def _color_popover():
+	return _popover(
+		dmc.Button(
+			html.Span(
+				[
+					html.Span(id="legend-min"),
+					html.Span(id="legend-bar", className="gb-legend-bar"),
+					html.Span(id="legend-max"),
+				],
+				className="gb-legend gb-num",
+			),
+			id="color-open-btn",
+			variant="default",
+			rightSection="▾",
+			**{"aria-label": "Color settings"},
+		),
 		dmc.Stack(
 			[
+				dmc.Text("Color", fw=600, size="sm"),
+				# Dropdowns stay inside the popover (no portal) so picking
+				# an option doesn't count as a click outside and close it.
+				dmc.Select(
+					id="colorscale-select",
+					label="Colorscale",
+					data=COLORSCALES,
+					value="Aurora",
+					searchable=True,
+					allowDeselect=False,
+					comboboxProps={"withinPortal": False},
+				),
 				dmc.Group(
 					[
-						dmc.Text(
-							"Region scores (current slice) - select rows to keep colored",
-							fw=600,
+						dmc.NumberInput(id="zmin-input", label="Min", value=-3.0, step=0.5),
+						dmc.NumberInput(id="zmax-input", label="Max", value=3.0, step=0.5),
+					],
+					grow=True,
+					gap="sm",
+				),
+				dmc.Divider(),
+				dmc.Group(
+					[
+						dmc.Switch(
+							id="static-color-toggle",
+							label="Flat color for selected regions",
+							checked=True,
 							size="sm",
 						),
-						dmc.Button(
-							"Deselect all",
-							id="deselect-all-btn",
-							variant="subtle",
-							size="compact-xs",
+						dmc.ColorInput(
+							id="static-color",
+							value="#fa5252",
+							format="hex",
+							w=120,
+							popoverProps={"withinPortal": False},
+							**{"aria-label": "Flat color"},
 						),
 					],
 					justify="space-between",
-					align="center",
 					wrap="nowrap",
+					gap="xs",
 				),
-				# The table fills the remaining card height and scrolls. The scroll
-				# lives on this wrapper (a flex child with minHeight:0 so it can
-				# shrink below content size) - a percentage height on the table's
-				# own container collapses to content height and never scrolls.
-				html.Div(
-					dash_table.DataTable(
-						id="results-table",
-						columns=[],
-						data=[],
-						sort_action="native",
-						filter_action="native",
-						row_selectable="multi",
-						page_size=11,
-						style_table={"overflowX": "auto"},
-						style_cell={
-							"fontFamily": "Inter, system-ui, sans-serif",
-							"fontSize": "12px",
-							"padding": "4px 8px",
-							"textAlign": "left",
-							"maxWidth": 160,
-							"overflow": "hidden",
-							"textOverflow": "ellipsis",
-						},
-						style_header={"fontWeight": "600", "backgroundColor": "#f1f3f5"},
-					),
-					style={"flex": "1 1 auto", "minHeight": 0, "overflowY": "auto"},
+				dmc.Text(
+					"Only applies while rows are selected in the regions list.",
+					size="xs",
+					c="dimmed",
 				),
 			],
-			gap="xs",
-			style={"height": "100%"},
+			gap="sm",
 		),
-		style={"height": "100%"},
+		340,
 	)
 
 
-def _right_panel():
-	return dmc.Stack(
+def _stage():
+	return html.Main(
 		[
-			html.Div(_brain_graph(), style={**TOP_ROW, **ROW_FILL}),
-			dmc.Flex(
+			html.Div(
 				[
-					html.Div(_controls_panel(), style={"flex": "5 1 0", "minWidth": 0}),
-					html.Div(_table_panel(), style={"flex": "7 1 0", "minWidth": 0}),
+					dmc.SegmentedControl(id="score-select", data=SCORES, value="rel_abundance"),
+					dmc.Select(
+						id="group-select",
+						data=[],
+						placeholder="Group",
+						clearable=False,
+						w=180,
+						**{"aria-label": "Group"},
+					),
+					html.Div(_color_popover(), className="gb-push"),
 				],
-				gap="md",
-				style=BOTTOM_ROW,
+				className="gb-toolbar",
+			),
+			html.Div(
+				[
+					dcc.Graph(
+						id="brain-graph",
+						responsive=True,
+						config={
+							"displayModeBar": False,
+							"scrollZoom": True,
+						},
+					),
+					html.Div(
+						[
+							html.Img(src="/assets/GeoBrain_logo2.png", alt="GeoBrain logo"),
+							dmc.Title("Load an atlas to get started", order=2, size="h3"),
+							dmc.Text(
+								"Pick a BrainGlobe atlas, build slices and compute region "
+								"scores, or reopen GeoJSON and score files saved from an "
+								"earlier session.",
+								size="sm",
+								c="dimmed",
+								maw=440,
+							),
+							dmc.Button("Set up data", id="empty-setup-btn"),
+						],
+						id="empty-state",
+						className="gb-empty",
+					),
+				],
+				className="gb-canvas",
+			),
+			html.Div(
+				[
+					dmc.Text(id="slice-label", size="sm"),
+					dmc.ActionIcon(
+						"‹",
+						fz=24,
+						id="slice-prev-btn",
+						variant="subtle",
+						color="gray",
+						size="lg",
+						**{"aria-label": "Previous slice"},
+					),
+					html.Div(
+						dcc.Slider(
+							id="slice-slider",
+							min=0,
+							max=0,
+							step=1,
+							value=0,
+							updatemode="drag",
+							included=False,
+							marks={},
+							allow_direct_input=False,
+						),
+						id="slice-slider-wrap",
+					),
+					dmc.ActionIcon(
+						"›",
+						fz=24,
+						id="slice-next-btn",
+						variant="subtle",
+						color="gray",
+						size="lg",
+						**{"aria-label": "Next slice"},
+					),
+				],
+				className="gb-slicebar",
 			),
 		],
-		gap="md",
-		# The graph grows to ~70% and won't shrink below its floor, so on short
-		# viewports this column overflows here and scrolls rather than squeezing
-		# the figure; the lower cards manage their own inner overflow (see
-		# _controls_panel / _table_panel).
-		style=COLUMN,
+		className="gb-stage",
+	)
+
+
+def _regions_panel():
+	return html.Aside(
+		[
+			html.Div(
+				[
+					dmc.Group(
+						[
+							dmc.Text("Regions in this slice", fw=600, size="sm"),
+							dmc.Text(id="regions-count", size="xs", c="dimmed"),
+						],
+						justify="space-between",
+						wrap="nowrap",
+					),
+					dmc.TextInput(
+						id="region-filter",
+						placeholder="Filter by name or ID",
+						debounce=200,
+						leftSection="⌕",
+						**{"aria-label": "Filter regions"},
+					),
+					dmc.Group(
+						[
+							dmc.Text(id="regions-sel-text", size="xs", c="dimmed"),
+							dmc.Button(
+								"Clear", id="deselect-all-btn", variant="subtle", size="compact-xs"
+							),
+						],
+						justify="space-between",
+						wrap="nowrap",
+					),
+				],
+				className="gb-panel-head",
+			),
+			# Filled by render.js `table`: a header row plus one row per region
+			# (checkbox, color swatch, ID, name, value). Selected ids live in
+			# selected-rids-store; the wrapper is the only scroll container, so the
+			# sticky header stays put.
+			html.Div(id="results-table", className="gb-regions"),
+		],
+		id="regions-panel",
+		className="gb-panel",
 	)
 
 
 def _stores():
 	return [
 		dcc.Store(id="session-store", storage_type="memory"),
+		dcc.Store(id="atlas-name-store", storage_type="memory"),
 		dcc.Store(id="geometry-store", storage_type="memory"),
 		dcc.Store(id="scores-store", storage_type="memory"),
 		dcc.Store(id="slices-store", storage_type="memory"),
+		# Region ids ticked in the regions list; render.js keeps its own copy in sync.
+		dcc.Store(id="selected-rids-store", storage_type="memory", data=[]),
 		dcc.Store(id="colorscale-stops-store", storage_type="memory"),
 		# Single source for render.js's score -> value column lookup.
 		dcc.Store(id="score-columns-store", data=SCORE_VALUE_COLUMN),
 		dcc.Download(id="download-geojson"),
 		dcc.Download(id="download-scores"),
+		dcc.Download(id="download-pub"),
 	]
 
 
@@ -754,46 +876,19 @@ def build_layout():
 	return dmc.MantineProvider(
 		id="mantine-provider",
 		forceColorScheme="dark",
-		theme={
-			"primaryColor": "indigo",
-			"defaultRadius": "md",
-			"fontFamily": "Inter, system-ui, sans-serif",
-		},
+		theme=THEME,
+		# Single full-viewport page: top bar, then the stage beside the regions
+		# panel. Everything else lives in the setup modal and two popovers.
 		children=html.Div(
 			[
 				*_stores(),
 				dmc.NotificationProvider(position="top-center", zIndex=2000),
 				html.Div(id="notifications-container"),
 				_header(),
-				dmc.Grid(
-					[
-						# Cap the pipeline column at 500px; the view column uses
-						# span="auto" so it grows to fill the space freed by the cap
-						# (rather than leaving a gap) on wide monitors.
-						dmc.GridCol(
-							_left_panel(),
-							span={"base": 12, "md": 3},
-							style={"maxWidth": "500px"},
-						),
-						# minWidth:0 lets this column shrink below its content's
-						# min-content width (the native-filter table is wide). Without
-						# it the column can't shrink and Mantine's flex-wrap Grid drops
-						# it onto the next line - collapsing it below the left column on
-						# resize. The table's own overflowX scrolls instead.
-						dmc.GridCol(
-							_right_panel(),
-							span={"base": 12, "md": "auto"},
-							style={"minWidth": 0},
-						),
-					],
-					gap="md",
-				),
+				html.Div([_stage(), _regions_panel()], className="gb-body"),
+				_setup_modal(),
 			],
 			id="app-root",
-			style={
-				"padding": "12px",
-				"backgroundColor": "var(--mantine-color-body)",
-				"minHeight": "100vh",
-			},
+			className="gb",
 		),
 	)

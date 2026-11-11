@@ -63,7 +63,8 @@ def load_refatlas_regions(
 
 	out = []
 	for file in files:
-		df = pd.read_csv(file, sep=sep, engine="python")[
+		# The C parser is much faster; only multi-char/regex separators need "python".
+		df = pd.read_csv(file, sep=sep, engine="c" if len(sep) == 1 else "python")[
 			[col_id, col_name, col_count, col_area]
 		].copy()
 		df["animal"] = find_animal_id(file)
@@ -589,7 +590,7 @@ def score_table(
 		)
 
 	if group_cols is None:
-		return _compute_selected_scores(
+		result = _compute_selected_scores(
 			df=region_by_subject,
 			scores=scores,
 			col_id=col_id,
@@ -597,6 +598,8 @@ def score_table(
 			rel_abundance_method=rel_abundance_method,
 			reference_stats=reference_stats,
 		)
+		result["n_animals"] = region_by_subject["animal"].nunique()
+		return result
 
 	group_score_tables = []
 	for group, sub_df in region_by_subject.groupby("group_label", dropna=False):
@@ -610,6 +613,7 @@ def score_table(
 		)
 
 		group_score_df.insert(0, "group_label", str(group))
+		group_score_df["n_animals"] = sub_df["animal"].nunique()
 		group_score_tables.append(group_score_df)
 
 	return pd.concat(group_score_tables, ignore_index=True)

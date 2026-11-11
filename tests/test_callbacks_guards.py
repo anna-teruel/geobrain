@@ -338,7 +338,7 @@ def test_load_raw_bregma_only_for_allen_mouse(
 	callbacks_by_name, monkeypatch, structure_df, atlas_name, expected
 ):
 	monkeypatch.setattr(geobrain, "load_atlas", lambda name: _FakeAtlas(name, structure_df))
-	sid, _, _ = callbacks_by_name["load_raw"](1, atlas_name, None)
+	sid, _, _ = callbacks_by_name["load_raw"](lambda _: None, 1, atlas_name, None)
 	try:
 		assert cache.get(sid, "coord_species") == expected
 	finally:
@@ -416,3 +416,75 @@ def test_load_cached_geojson_rejects_bad_features(
 	assert result[0] is no_update
 	assert _toast_color(toast_ctx) == "red"
 	assert field in toast_ctx["notifications-container"]["children"].message
+
+
+# --------------------------------------------------------------------------- #
+# side-by-side group option
+# --------------------------------------------------------------------------- #
+def test_populate_groups_offers_side_by_side_for_multiple_groups(callbacks_by_name):
+	fn = callbacks_by_name["populate_groups"]
+	options, default = fn({"control": [], "treated": [], "All (mean)": []})
+	assert [o["value"] for o in options] == ["control", "treated", "All (mean)", "Side by side"]
+	assert default == "All (mean)"
+	# A single group has nothing to compare.
+	options, _ = fn({"All": []})
+	assert [o["value"] for o in options] == ["All"]
+
+
+def test_export_slice_side_by_side_passes_every_group(
+	callbacks_by_name, toast_ctx, session, monkeypatch
+):
+	cache.put(session, "geometry", {"by_slice": {}, "orientation": "coronal"})
+	captured = {}
+	monkeypatch.setattr(
+		figure,
+		"build_export_figure",
+		lambda *, score_records, **kw: captured.update(r=score_records),
+	)
+	monkeypatch.setattr(geobrain, "save_figure", lambda fig, **kwargs: "/tmp/brain.svg")
+
+	scores = {"control": [{"Region ID": 1}], "treated": [{"Region ID": 2}], "All (mean)": []}
+	args = list(_export_args(session, scores, [{"slice_index": 1}]))
+	args[6] = "Side by side"  # group
+	callbacks_by_name["export_slice"](*args)
+	assert captured["r"] == {"control": scores["control"], "treated": scores["treated"]}
+
+
+def test_export_publication_range_guards(callbacks_by_name, toast_ctx, session):
+	"""No geometry, a missing bound, or a range that holds no slice each return a
+	message and no download; From/To given in either order select the slices."""
+	export = callbacks_by_name["export_publication"]
+	slices = [{"slice_index": i, "coordinate_mm": float(i)} for i in range(3)]
+
+	def call(lo, hi, sl=slices):
+		return export(
+			1,
+			session,
+			{},
+			sl,
+			"density",
+			"Viridis",
+			None,
+			None,
+			"n",
+			"svg",
+			[],
+			"#fff",
+			False,
+			lo,
+			hi,
+		)
+
+	assert call(0, 1)[1] is no_update  # nothing cached yet
+	cache.put(
+		session,
+		"geometry",
+		{
+			"by_slice": {str(i): [] for i in range(3)},
+			"dims": {"w": 4, "h": 4},
+			"orientation": "coronal",
+		},
+	)
+	assert call(None, 1)[1] is no_update
+	assert call(10, 20)[0] == "No slices fall in that range."
+	assert call(2, 1)[0] != "No slices fall in that range."  # reversed bounds are sorted
