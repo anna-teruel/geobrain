@@ -4,102 +4,21 @@ import copy
 import json
 
 import numpy as np
-import pandas as pd
 import pytest
 from shapely.geometry import MultiPolygon, Polygon
 
 import geobrain.build_geoJSON as bg
 from geobrain.build_geoJSON import (
-	load_annotation_volume,
-	load_structure_graph,
-	get_slice_view,
-	clean_polygons_geometry,
-	mask_to_polygon,
 	build_geojson,
+	clean_polygons_geometry,
+	get_slice_view,
+	mask_to_polygon,
 	save_geojson,
 )
 
 
 def _flat_coords(geometry_coordinates):
 	return np.array([pt for poly in geometry_coordinates for ring in poly for pt in ring])
-
-
-def test_load_annotation_volume_rejects_unsupported_resolution():
-	# Validation happens before any network access.
-	with pytest.raises(ValueError):
-		load_annotation_volume(resolution_um=7)
-
-
-def test_load_annotation_volume_returns_array(monkeypatch):
-	# Success path: download + NRRD parsing are mocked so no network is hit.
-	# The contract is a bare 3D array (the dashboard relies on `.shape`).
-	fake_volume = np.zeros((2, 3, 4), dtype=np.uint32)
-	monkeypatch.setattr(bg, "download_bytes", lambda url: b"raw-bytes")
-	monkeypatch.setattr(bg.nrrd, "read_header", lambda memory_file: {"sizes": [2, 3, 4]})
-	monkeypatch.setattr(bg.nrrd, "read_data", lambda header, memory_file: fake_volume)
-
-	out = load_annotation_volume(resolution_um=25)
-	assert isinstance(out, np.ndarray)
-	assert out.shape == (2, 3, 4)
-
-
-def test_load_structure_graph_flattens_tree(monkeypatch):
-	# A nested ontology (root -> grey -> Isocortex) must flatten to one row per
-	# node with parent_structure_id wired from the tree (root's parent is None).
-	ontology = {
-		"msg": [
-			{
-				"id": 997,
-				"acronym": "root",
-				"name": "root",
-				"graph_order": 0,
-				"structure_id_path": "/997/",
-				"color_hex_triplet": "FFFFFF",
-				"children": [
-					{
-						"id": 8,
-						"acronym": "grey",
-						"name": "Basic cell groups and regions",
-						"graph_order": 1,
-						"structure_id_path": "/997/8/",
-						"color_hex_triplet": "BFDAE3",
-						"children": [
-							{
-								"id": 315,
-								"acronym": "Isocortex",
-								"name": "Isocortex",
-								"graph_order": 2,
-								"structure_id_path": "/997/8/315/",
-								"color_hex_triplet": "70FF71",
-								"children": [],
-							}
-						],
-					}
-				],
-			}
-		]
-	}
-	monkeypatch.setattr(bg, "download_bytes", lambda url: json.dumps(ontology).encode("utf-8"))
-
-	df = load_structure_graph()
-
-	assert set(df["id"]) == {997, 8, 315}
-	for col in (
-		"id",
-		"acronym",
-		"name",
-		"parent_structure_id",
-		"graph_order",
-		"structure_id_path",
-		"color_hex_triplet",
-	):
-		assert col in df.columns
-
-	# Mixing None (root) with ints makes the column float, so root reads as NaN.
-	parent = dict(zip(df["id"], df["parent_structure_id"]))
-	assert pd.isna(parent[997])
-	assert parent[8] == 997
-	assert parent[315] == 8
 
 
 def test_get_slice_view_per_orientation():
@@ -298,3 +217,22 @@ def test_build_geojson_from_coords_mm(synthetic_volume, structure_df):
 
 	assert geojson["type"] == "FeatureCollection"
 	assert all(feat["properties"]["slice_index"] == 1 for feat in geojson["features"])
+
+
+@pytest.mark.parametrize("index", [-1, 3])
+def test_get_slice_view_rejects_out_of_range(index):
+	# -1 would otherwise silently return the last slice.
+	with pytest.raises(IndexError):
+		get_slice_view(np.zeros((3, 4, 5)), index, "coronal")
+
+
+def test_geojson_and_app_geometry_trace_same_regions(synthetic_volume, structure_df):
+	from geobrain.app.figure import build_slice_geometry
+
+	gj = build_geojson(synthetic_volume, structure_df, "coronal", slice_indices=[0, 1, 2])
+	payload, _ = build_slice_geometry(synthetic_volume, structure_df, "coronal", 25, [0, 1, 2])
+	from_gj = {
+		(f["properties"]["slice_index"], f["properties"]["Region ID"]) for f in gj["features"]
+	}
+	from_app = {(int(si), r["rid"]) for si, regs in payload["by_slice"].items() for r in regs}
+	assert from_gj == from_app == {(1, 315)}

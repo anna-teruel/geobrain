@@ -101,12 +101,12 @@ Frequency is independent of object count. A region with a single object in every
 
 Density measures the concentration of objects within a region.
 
-It is computed by dividing the total object count by the region area.
+It is computed for each animal as its object count divided by its region area, then averaged across animals. Every animal counts equally, so groups of different sizes stay comparable. Animals with a zero or missing area for a region are left out of that region's average.
 
 ### Formula
 
 ```text
-density = total_objects / region_area
+density = mean over animals of (objects / region_area)
 ```
 
 ### Interpretation

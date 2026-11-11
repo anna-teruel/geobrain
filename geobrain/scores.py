@@ -4,13 +4,13 @@ Region-level score tables from QUINT *_RefAtlasRegions.csv exports.
 
 import glob
 import os
-from typing import Callable
+from collections.abc import Callable
 
 import pandas as pd
 from scipy.stats import zscore
 
 from geobrain.metadata import MetadataConfig
-from geobrain.types import ScoreName, RelAbundanceMethod, ReferenceMode
+from geobrain.types import ReferenceMode, RelAbundanceMethod, ScoreName
 
 ScoreFn = Callable[[pd.DataFrame], pd.DataFrame]
 
@@ -39,7 +39,6 @@ def load_refatlas_regions(
 	col_name: str = "Region name",
 	col_count: str = "Object count",
 	col_area: str = "Region area",
-	exclude_region_ids: set[int] = {0, 997},
 ) -> pd.DataFrame:
 	"""
 	Load and concatenate QUINT *_RefAtlasRegions.csv files from a directory.
@@ -51,8 +50,6 @@ def load_refatlas_regions(
 	    col_name: Column name for the region name.
 	    col_count: Column name for the object count.
 		col_area: Column name for the region area (typically in squared pixels).
-	    exclude_region_ids: Region IDs to exclude
-	                    (e.g. background/root).
 
 	Returns:
 	    Long-format table with columns ['animal', col_id, col_name, col_count].
@@ -74,8 +71,6 @@ def load_refatlas_regions(
 		df[col_count] = pd.to_numeric(df[col_count], errors="coerce").fillna(0)
 		df[col_area] = pd.to_numeric(df[col_area], errors="coerce").fillna(0)
 
-		if exclude_region_ids:
-			df = df[~df[col_id].isin(exclude_region_ids)]
 		out.append(df)
 	return pd.concat(out, ignore_index=True)
 
@@ -327,8 +322,10 @@ def density_score(
 	"""
 	Compute region-level object density across animals.
 
-	Density is defined as the total number of detected objects divided by the
-	total region area across animals.
+	Density is computed per animal as objects / region area, then averaged
+	across animals, so every animal counts equally and the value does not
+	grow with group size. Animals whose area for a region is zero or missing
+	are left out of that region's mean.
 
 	Interpretation:
 	    - Higher density values indicate that objects are more concentrated
@@ -349,22 +346,22 @@ def density_score(
 	        - objects_total
 	        - area_total
 	        - n_animals
-	        - density
+	        - density (NA when no animal has a positive area)
 	"""
-	region_density = (
-		region_by_subject.groupby([col_id, col_name], dropna=True)
+	area = region_by_subject[area_col]
+	per_animal = region_by_subject.assign(
+		_density=(region_by_subject["objects"] / area).where(area > 0)
+	)
+	return (
+		per_animal.groupby([col_id, col_name], dropna=True)
 		.agg(
 			objects_total=("objects", "sum"),
-			area_total=(area_col, "mean"),
+			area_total=(area_col, "sum"),
 			n_animals=("animal", "nunique"),
+			density=("_density", "mean"),
 		)
 		.reset_index()
 	)
-
-	region_density["density"] = region_density["objects_total"] / region_density["area_total"]
-	region_density.loc[region_density["area_total"] <= 0, "density"] = pd.NA
-
-	return region_density
 
 
 def _compute_selected_scores(
@@ -445,7 +442,6 @@ def score_table(
 	col_name: str = "Region name",
 	col_count: str = "Object count",
 	col_area: str = "Region area",
-	exclude_region_ids: set[int] = {0, 997},
 	metadata_path: str | None = None,
 	metadata_sep: str | None = None,
 	animal_col: str = "animal",
@@ -478,8 +474,6 @@ def score_table(
 	        Column containing object counts.
 	    col_area : str, default="Region area"
 	        Column containing region area.
-	    exclude_region_ids : set[int], default={0, 997}
-	        Region IDs to exclude, usually background and root.
 	    metadata_path : str | None, default=None
 	        Optional metadata CSV.
 	    metadata_sep : str | None, default=None
@@ -533,7 +527,6 @@ def score_table(
 		col_name=col_name,
 		col_count=col_count,
 		col_area=col_area,
-		exclude_region_ids=exclude_region_ids,
 	)
 
 	region_by_subject = compute_animal_region_counts(
@@ -631,7 +624,6 @@ def save_scores(
 	col_name: str = "Region name",
 	col_count: str = "Object count",
 	col_area: str = "Region area",
-	exclude_region_ids: set[int] = {0, 997},
 	metadata_path: str | None = None,
 	metadata_sep: str | None = None,
 	animal_col: str = "animal",
@@ -652,7 +644,6 @@ def save_scores(
 		col_name=col_name,
 		col_count=col_count,
 		col_area=col_area,
-		exclude_region_ids=exclude_region_ids,
 		metadata_path=metadata_path,
 		metadata_sep=metadata_sep,
 		animal_col=animal_col,

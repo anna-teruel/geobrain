@@ -11,11 +11,6 @@
 window.dash_clientside = window.dash_clientside || {};
 
 const NA_COLOR = "#d9d9d9";
-const VALUE_COL = {
-	rel_abundance: "relative_abundance_z",
-	frequency: "frequency",
-	density: "density",
-};
 const FALLBACK_STOPS = [
 	[0, [68, 1, 84]],
 	[0.5, [33, 145, 140]],
@@ -140,7 +135,8 @@ window.dash_clientside.geobrain = {
 		return window.dash_clientside.no_update;
 	},
 
-	buildFigure: function (sliderVal, score, group, stops, zmin, zmax, geometry, scores, slices, dark, highlight, staticColor, useFlat) {
+	// scoreColumns: score -> value column map from figure.SCORE_VALUE_COLUMN (score-columns-store).
+	buildFigure: function (sliderVal, score, group, stops, zmin, zmax, geometry, scores, slices, dark, highlight, staticColor, useFlat, scoreColumns) {
 		if (!geometry || !geometry.by_slice || !slices || !slices.length) {
 			return emptyFigure("Build or load slices to begin");
 		}
@@ -151,7 +147,7 @@ window.dash_clientside.geobrain = {
 		const dims = geometry.dims;
 
 		if (!stops || !stops.length) stops = FALLBACK_STOPS;
-		const valueCol = VALUE_COL[score] || "relative_abundance_z";
+		const valueCol = (scoreColumns || {})[score] || "relative_abundance_z";
 		const valueMap = buildValueMap(pickRecords(scores, group), valueCol);
 		const [vmin, vmax] = autoRange(valueMap, zmin, zmax);
 
@@ -292,7 +288,7 @@ window.dash_clientside.geobrain = {
 		];
 	},
 
-	buildTable: function (sliderVal, score, group, geometry, scores, slices, dark) {
+	buildTable: function (sliderVal, score, group, geometry, scores, slices, dark, scoreColumns) {
 		const emptyCols = [
 			{ name: "Region ID", id: "rid" },
 			{ name: "Region", id: "name" },
@@ -307,7 +303,7 @@ window.dash_clientside.geobrain = {
 		const present = {};
 		regions.forEach((r) => (present[r.rid] = true));
 
-		const valueCol = VALUE_COL[score] || "relative_abundance_z";
+		const valueCol = (scoreColumns || {})[score] || "relative_abundance_z";
 		const records = pickRecords(scores, group);
 		const rows = [];
 		for (let i = 0; i < records.length; i++) {

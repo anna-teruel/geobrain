@@ -2,8 +2,9 @@
 Choropleth rendering of Allen atlas slice GeoJSONs with Plotly.
 """
 
-import pandas as pd
 import math
+
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
@@ -21,7 +22,6 @@ def render_brain_slice(
 	name_col: str = "Region name",
 	line_color: str = "rgba(255,255,255,0.9)",
 	line_width: float = 0.5,
-	exclude_ids: tuple[int, ...] = (0, 997),
 	**kwargs,
 ) -> go.Figure:
 	"""
@@ -51,8 +51,6 @@ def render_brain_slice(
 	        Boundary color used to outline regions.
 	    line_width : float, default=0.5
 	        Boundary line width in pixels.
-	    exclude_ids : tuple[int, ...], default=(0, 997)
-	        Allen structure IDs excluded from rendering.
 	    **kwargs
 	        Additional keyword arguments passed directly to
 	        ``plotly.express.choropleth_map``. These can be used to customize
@@ -68,7 +66,6 @@ def render_brain_slice(
 	score_df[col_id] = pd.to_numeric(score_df[col_id], errors="coerce").astype("Int64")
 	score_df[value_col] = pd.to_numeric(score_df[value_col], errors="coerce")
 	score_df = score_df.dropna(subset=[col_id])
-	score_df = score_df[~score_df[col_id].isin(exclude_ids)]
 
 	feature_rows = []
 
@@ -80,9 +77,6 @@ def render_brain_slice(
 			continue
 
 		rid = int(rid)
-
-		if rid in exclude_ids:
-			continue
 
 		if "feature_id" not in props:
 			raise KeyError(

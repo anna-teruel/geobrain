@@ -40,7 +40,7 @@ geobrain
 - [Using the dashboard](docs/dashboard_usage.md) — launching the app and the full workflow: load atlas, build slices, compute scores, view and export.
 - [Filtering & coloring rendered slices](docs/filtering_and_coloring.md) — how to color regions by score, filter and select which regions stay highlighted, and apply a flat color.
 - [Understanding Scores](docs/score_definitions.md) — score definitions, normalization methods and interpretation.
-- [Tutorial](examples/demo_API.ipynb) — end-to-end example using the API.
+- [Tutorial](examples/demo_API.ipynb) — end-to-end example using the API. To run it, install the notebook extra: `uv pip install "geobrain[notebook]"`.
 
 ## License
 

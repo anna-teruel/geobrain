@@ -24,24 +24,22 @@ classifiers = [
 ]
 
 dependencies = [
-    "ipykernel",
     "kaleido",
     "numpy",
     "plotly",
     "pandas",
     "scipy",
-    "h5py",
-    "requests",
-    "pynrrd",
     "rasterio",
     "shapely",
     "scikit-image",
-    "dash>=2.17",
-    "dash-mantine-components>=0.14",
+    "dash>=4.5",  # first version known to ship React 19
+    "dash-mantine-components>=3",
     "diskcache",
     "multiprocess",
     "psutil",
     "tqdm",
+    "brainglobe-atlasapi>=3.0.2",
+    "pydantic>=2",
 ]
 
     [project.urls]
@@ -92,6 +90,10 @@ line-length = 100
     docstring-code-format = true
 
 [project.optional-dependencies]
+notebook = [
+    "ipykernel",
+]
+
 test = [
     "pytest",
     "pytest-cov",

@@ -30,8 +30,9 @@ def create_app() -> Dash:
 	cache = diskcache.Cache(_CACHE_DIR)
 	background_manager = DiskcacheManager(cache)
 
-	# dash-mantine-components requires React 18 - https://www.dash-mantine-components.com/migration
-	dash._dash_renderer._set_react_version("18.2.0")
+	# dash-mantine-components 3 requires React 19; Dash ships it but still
+	# defaults to 18 - https://www.dash-mantine-components.com/migration
+	dash._dash_renderer._set_react_version("19.2.4")
 
 	app = Dash(
 		__name__,
