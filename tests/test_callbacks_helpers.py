@@ -246,3 +246,29 @@ def test_slider_config_marks_fall_back_to_index_without_coordinate():
 	slices = [{"slice_index": 10, "coordinate_mm": None}]
 	_, _, _, marks = cb._slider_config(slices)
 	assert marks == {0: "10"}
+
+
+# --------------------------------------------------------------------------- #
+# side by side: _records_for / _data_range
+# --------------------------------------------------------------------------- #
+_SBS_SCORES = {
+	"All (mean)": [{"Region ID": 1, "density": 5.0}],
+	"A": [{"Region ID": 1, "density": 1.0}],
+	"B": [{"Region ID": 1, "density": 3.0}],
+}
+
+
+def test_records_for_side_by_side_skips_combined_group():
+	got = cb._records_for(_SBS_SCORES, cb.SIDE_BY_SIDE_LABEL)
+	assert list(got) == ["A", "B"]
+
+
+def test_records_for_single_group_falls_back_to_first():
+	assert cb._records_for(_SBS_SCORES, "B")[0]["density"] == 3.0
+	assert cb._records_for(_SBS_SCORES, "nope")[0]["density"] == 5.0  # first group
+	assert cb._records_for({}, "A") == []
+
+
+def test_data_range_side_by_side_spans_every_group():
+	# The combined mean (5.0) is not a panel, so the range is the real groups': 1..3.
+	assert cb._data_range(_SBS_SCORES, cb.SIDE_BY_SIDE_LABEL, "density") == (1.0, 3.0)

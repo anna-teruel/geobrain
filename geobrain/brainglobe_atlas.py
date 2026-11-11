@@ -4,6 +4,9 @@ Integration of the BrainGlobe atlas API into GeoBrain
 
 import configparser
 import re
+import threading
+from collections.abc import Callable
+from contextlib import contextmanager
 from functools import cached_property, lru_cache
 
 import numpy as np
@@ -11,8 +14,11 @@ import pandas as pd
 
 # Aliased: GeoBrain's own BrainGlobeAtlas (below) wraps this class.
 from brainglobe_atlasapi import BrainGlobeAtlas as _BGAtlas
+from brainglobe_atlasapi import bg_atlas as _bg_atlas
+from brainglobe_atlasapi import core as _bg_core
 from brainglobe_atlasapi import list_atlases
 from brainglobe_atlasapi.descriptors import ATLAS_ORIENTATION
+from fsspec.callbacks import Callback
 
 # BrainGlobe metadata stores the binomial name; GeoBrain's coordinate
 # system (coord_system._require_mouse) uses common names.
@@ -108,6 +114,43 @@ def list_available_atlases() -> pd.DataFrame:
 		)
 	df = pd.DataFrame(rows, columns=["name", "atlas", "species", "resolution_um", "downloaded"])
 	return df.sort_values(["species", "atlas", "resolution_um"], ignore_index=True)
+
+
+_PROGRESS_LOCK = threading.Lock()
+
+
+@contextmanager
+def download_progress(on_progress: Callable[[int, int], None]):
+	"""
+	Report BrainGlobe downloads made inside the block to
+	``on_progress(done, total)``, counted in files per download batch (the
+	atlas metadata comes as a few small batches, the annotation volume as one
+	large batch of chunk files). Nothing is reported for an atlas that is
+	already in the local cache, since nothing is downloaded.
+
+	Both the BrainGlobeAtlas constructor and the first access to
+	``annotation`` can download, so wrap both.
+
+	shortcut: brainglobe_atlasapi 3.0.x ignores its own ``fn_update`` argument
+	and hard-codes fsspec's TqdmCallback, so that name is swapped in its
+	modules for the duration of the block (serialised by a lock, so concurrent loads queue; if a release
+	renames it, progress is simply not reported). Pass ``fn_update`` instead
+	once BrainGlobeAtlas honours it again.
+	"""
+
+	def callback(*args, **kwargs):
+		return Callback(hooks={"geobrain": lambda size, value, **_: on_progress(value, size)})
+
+	modules = [m for m in (_bg_atlas, _bg_core) if hasattr(m, "TqdmCallback")]
+	with _PROGRESS_LOCK:
+		originals = [m.TqdmCallback for m in modules]
+		for module in modules:
+			module.TqdmCallback = callback
+		try:
+			yield
+		finally:
+			for module, original in zip(modules, originals):
+				module.TqdmCallback = original
 
 
 class BrainGlobeAtlas:

@@ -1,70 +1,232 @@
-<<<<<<< HEAD:plotlybrain/app/assets/styles.css
-/* PlotlyBrain dashboard - small visual refinements on top of Mantine. */
-=======
-/* GeoBrain dashboard — small visual refinements on top of Mantine. */
->>>>>>> main:geobrain/app/assets/styles.css
+/* GeoBrain dashboard shell. Colors come from the Mantine theme in layout.py
+   (violet primary and violet-tinted dark/gray ramps, all taken from the logo);
+   the few tokens below cover what Mantine has no variable for. */
+:root {
+	--gb-ground: #efeff9; /* page behind the top bar */
+	--gb-stage: #fbfbfe; /* well the slice sits in */
+	--gb-raised: var(--mantine-color-gray-1);
+	--gb-line: var(--mantine-color-gray-3);
+	--gb-ok: #00806f; /* logo teal, darkened for contrast on white */
+}
+:root[data-mantine-color-scheme="dark"] {
+	--gb-ground: #14142b;
+	--gb-stage: #0d0d1f;
+	--gb-raised: var(--mantine-color-dark-6);
+	--gb-line: var(--mantine-color-dark-4);
+	--gb-ok: #22d3c0;
+}
 
 body {
 	margin: 0;
-	font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+/* Numbers: monospace, so columns of values line up. */
+.gb-num {
+	font-family: "JetBrains Mono", ui-monospace, monospace;
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
 }
 
-/* Dark-mode palette: navy-tinted surfaces/borders anchored on the #191930
-   background. dark-7 is the body, dark-6 the card/input surface, dark-4 the
-   borders; the lighter shades (text) are left as Mantine defaults. */
-[data-mantine-color-scheme="dark"] {
-	--mantine-color-body: #191930 !important;
-	--mantine-color-dark-4: #34345a !important; /* borders, dividers */
-	--mantine-color-dark-5: #2a2a4a !important; /* subtle/hover surfaces */
-	--mantine-color-dark-6: #20203b !important; /* cards, input backgrounds */
-	--mantine-color-dark-7: #191930 !important; /* base / body */
-	--mantine-color-dark-8: #131325 !important;
-	--mantine-color-dark-9: #0d0d1c !important;
+/* One page, exactly one viewport tall: nothing outside the regions list scrolls. */
+#app-root {
+	height: 100vh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--gb-ground);
 }
 
-/* Light scheme: an airy azure-tinted mirror of the dark navy theme. Soft azure
-   page, pale-azure cards that read as raised, azure-grey borders and muted
-   text. Overrides the inline white bg on #app-root. */
-[data-mantine-color-scheme="light"] {
-	--mantine-color-default-border: #c1d7f7 !important; /* hero azure */
-	/* Azure-tinted support greys (hue ~216) so surfaces, hovers and muted
-	   text harmonize with the background instead of reading neutral. */
-	--mantine-color-gray-0: #f0f4fd !important; /* subtle hover/surfaces */
-	--mantine-color-gray-1: #e6eefb !important;
-	--mantine-color-gray-2: #d8e3f7 !important;
-	--mantine-color-gray-6: #6c7a9b !important; /* dimmed text */
-	--mantine-color-gray-7: #424d6c !important; /* secondary text */
+/* ── top bar ── */
+.gb-top {
+	flex: none;
+	min-height: 56px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 16px;
+	padding: 8px 16px;
+	background: var(--mantine-color-body);
+	border-bottom: 1px solid var(--gb-line);
 }
-[data-mantine-color-scheme="light"] #app-root {
-	background: #c1d7f7 !important;
+.gb-brand {
+	font-family: Nunito, Inter, system-ui, sans-serif;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 19px;
+	font-weight: 800;
+	letter-spacing: -0.01em;
 }
-/* Cards: pale azure, lighter than the page so they still read as raised. */
-[data-mantine-color-scheme="light"] .mantine-Card-root {
-	background-color: #eaf1fd !important;
+.gb-mark {
+	height: 28px;
+	display: block;
+}
+.gb-pipe {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+}
+.gb-chip {
+	height: 36px;
+	padding: 0 12px 0 9px;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	border: 1px solid transparent;
+	border-radius: var(--mantine-radius-md);
+	background: transparent;
+	color: var(--mantine-color-text);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.gb-chip:hover {
+	background: var(--gb-raised);
+	border-color: var(--gb-line);
+}
+.gb-chip-label {
+	font-weight: 400;
+	color: var(--mantine-color-dimmed);
 }
 
-/* Make the brain graph container fill its card and feel responsive. */
+/* Step marker: a numbered ring that turns into a teal check once render.js
+   `pipeline` puts has-<step> on #app-root. */
+.gb-dot {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 1.5px solid var(--mantine-color-dimmed);
+	border-radius: 50%;
+	font-size: 10px;
+	font-weight: 600;
+	color: var(--mantine-color-dimmed);
+}
+.has-atlas .gb-step-atlas .gb-dot,
+.has-slices .gb-step-slices .gb-dot,
+.has-scores .gb-step-scores .gb-dot {
+	border-color: var(--gb-ok);
+	background: var(--gb-ok);
+	font-size: 0; /* hide the number, keep it for screen readers */
+}
+.has-atlas .gb-step-atlas .gb-dot::after,
+.has-slices .gb-step-slices .gb-dot::after,
+.has-scores .gb-step-scores .gb-dot::after {
+	content: "✓";
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--mantine-color-body);
+}
+
+/* Regions-panel toggle glyph: a frame with its right-hand column marked. */
+.gb-icon-panel {
+	width: 16px;
+	height: 13px;
+	border: 1.5px solid currentColor;
+	border-right-width: 6px;
+	border-radius: 3px;
+}
+
+/* ── stage ── */
+.gb-body {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+}
+.gb-stage {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	background: var(--gb-stage);
+}
+.gb-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	padding: 12px 16px;
+}
+.gb-push {
+	margin-left: auto;
+}
+.gb-legend {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-variant-numeric: tabular-nums;
+	font-weight: 500;
+}
+.gb-legend-bar {
+	width: 120px;
+	height: 10px;
+	border-radius: 5px;
+}
+.gb-canvas {
+	flex: 1;
+	min-height: 0;
+	position: relative;
+}
+/* Absolute so the figure takes the canvas's flexed height (min-height: 0 lets it
+   shrink) instead of pushing the slice bar off the page. */
 #brain-graph {
-	width: 100%;
+	position: absolute;
+	inset: 0 8px;
 }
-
-/* Slice slider breathing room. */
+.gb-empty {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	padding: 32px;
+	text-align: center;
+	background: var(--gb-stage);
+}
+.gb-empty img {
+	width: 300px;
+	max-width: 70%;
+	margin-bottom: 8px;
+}
+.has-slices .gb-empty {
+	display: none;
+}
+.gb-slicebar {
+	display: none;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 16px 8px;
+	border-top: 1px solid var(--gb-line);
+}
+.has-slices .gb-slicebar {
+	display: flex;
+}
+#slice-label {
+	min-width: 240px;
+	font-variant-numeric: tabular-nums;
+}
 #slice-slider-wrap {
+	flex: 1;
+	min-width: 0;
 	padding: 4px 6px 10px 6px;
 }
 
-/* Slider mark (tick) labels are too dark on the dark scheme - lighten them.
-   The `.slider-dark` class is toggled on the wrapper from the color-scheme
-   switch; !important beats rc-slider's default mark color. */
-#slice-slider-wrap.slider-dark .dash-slider-mark {
-	color: #c1c2c5 !important;
+/* Slider mark (tick) labels aren't Mantine elements, so lighten them for the
+   dark scheme here; !important beats rc-slider's default mark color. */
+[data-mantine-color-scheme="dark"] #slice-slider-wrap .dash-slider-mark {
+	color: var(--mantine-color-dark-2) !important;
 }
 
-/* Slice slider uses the primary (progress-bar) color so it stays visible.
-   This Dash slider renders Radix-style `dash-slider-*` parts; `included=False`
-   hides the filled range, so the thumb + track carry the color. */
+/* Slice slider uses the primary color so it stays visible. This Dash slider
+   renders Radix-style `dash-slider-*` parts; `included=False` hides the filled
+   range, so the thumb + track carry the color. */
 #slice-slider-wrap .dash-slider-track {
-	background-color: var(--mantine-color-default-border) !important;
+	background-color: var(--gb-line) !important;
 }
 #slice-slider-wrap .dash-slider-range {
 	background-color: var(--mantine-primary-color-filled) !important;
@@ -78,14 +240,250 @@ body {
 	box-shadow: 0 0 0 4px var(--mantine-primary-color-light) !important;
 }
 
-/* DataTable: tidy, scrollable, sticky header. */
-#results-table .dash-spreadsheet-container .dash-spreadsheet-inner th {
+/* ── regions panel ── */
+.gb-panel {
+	flex: none;
+	width: 380px;
+	display: flex;
+	flex-direction: column;
+	background: var(--mantine-color-body);
+	border-left: 1px solid var(--gb-line);
+}
+.gb-panel.is-hidden {
+	display: none;
+}
+.gb-panel-head {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 14px 16px 10px;
+}
+.gb-regions {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+}
+.gb-regions > .gb-hint {
+	padding: 16px;
+	font-size: 12px;
+	color: var(--mantine-color-dimmed);
+}
+.gb-row {
+	display: grid;
+	align-items: center;
+	gap: 10px;
+	height: 36px;
+	padding: 0 16px;
+	border-bottom: 1px solid var(--gb-line);
+	font-size: 13px;
+	cursor: pointer;
+}
+.gb-row:hover {
+	background: var(--gb-raised);
+}
+.gb-check {
+	width: 15px;
+	height: 15px;
+	box-sizing: border-box;
+	border: 1.5px solid var(--mantine-color-dimmed);
+	border-radius: 4px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.gb-row.is-on .gb-check {
+	border-color: var(--mantine-primary-color-filled);
+	background: var(--mantine-primary-color-filled);
+}
+.gb-row.is-on .gb-check::after {
+	content: "✓";
+	font-size: 11px;
+	line-height: 1;
+	color: #fff;
+}
+.gb-row:focus-visible {
+	outline: 2px solid var(--mantine-primary-color-filled);
+	outline-offset: -2px;
+}
+.gb-row-head {
 	position: sticky;
 	top: 0;
 	z-index: 1;
+	height: 30px;
+	cursor: default;
+	background: var(--gb-raised);
+	border-top: 1px solid var(--gb-line);
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--mantine-color-dimmed);
+}
+.gb-row-head:hover {
+	background: var(--gb-raised);
+}
+.gb-rid {
+	font-weight: 500;
+}
+.gb-rname {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--mantine-color-dimmed);
+}
+.gb-val {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.gb-swatch {
+	width: 12px;
+	height: 12px;
+	border-radius: 3px;
+	flex: none;
+}
+
+/* Dropdowns under the color legend and the Export button (render.js toggles is-open). */
+.gb-popwrap {
+	position: relative;
+}
+.gb-pop {
+	display: none;
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	z-index: 300;
+	max-width: calc(100vw - 32px);
+	padding: 16px;
+	border: 1px solid var(--gb-line);
+	border-radius: var(--mantine-radius-lg);
+	background: var(--mantine-color-body);
+	box-shadow: var(--mantine-shadow-md);
+}
+.gb-popwrap.is-open > .gb-pop {
+	display: block;
+}
+
+/* ── data setup modal ── */
+/* Child selectors: the Atlas step nests its own (pill) tabs inside this one. */
+.gb-setup > .mantine-Tabs-list {
+	width: 236px;
+	gap: 4px;
+	padding: 12px;
+	background: var(--gb-ground);
+}
+.gb-setup > .mantine-Tabs-list > .mantine-Tabs-tab {
+	padding: 10px 12px;
+	border-radius: var(--mantine-radius-md);
+}
+.gb-setup > .mantine-Tabs-list > .mantine-Tabs-tab .mantine-Tabs-tabLabel {
+	text-align: left;
+}
+.gb-setup > .mantine-Tabs-list > .mantine-Tabs-tab[data-active] {
+	background: var(--mantine-primary-color-light);
+}
+/* Mantine's subtle variant goes near-white in the dark scheme; keep the one
+   destructive action red in both. !important beats the inline --button-color. */
+#clear-cache-btn {
+	--button-color: var(--mantine-color-red-7) !important;
+}
+[data-mantine-color-scheme="dark"] #clear-cache-btn {
+	--button-color: var(--mantine-color-red-4) !important;
+}
+/* Fixed height so switching steps never resizes the modal; each step's form
+   fits without scrolling (the overflow is only a safety net on tiny windows). */
+.gb-step {
+	height: min(480px, calc(100vh - 160px));
+	display: flex;
+	flex-direction: column;
+}
+.gb-step-body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	padding: 20px 24px;
+}
+.gb-step-foot {
+	flex: none;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 16px 12px 24px;
+	border-top: 1px solid var(--gb-line);
+}
+.gb-step-status {
+	flex: 1;
+	min-width: 160px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+/* Atlas step: a download shows the progress bar, a load from disk the spinner. */
+#atlas-status {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+#atlas-status:not(.is-downloading) > :is(#atlas-progress, #atlas-progress-label),
+#atlas-status.is-downloading #step1-loader {
+	display: none !important; /* beats the inline display the callbacks set */
+}
+.gb-drop {
+	min-height: 120px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	padding: 12px;
+	border: 1.5px dashed var(--gb-line);
+	border-radius: var(--mantine-radius-md);
+	background: var(--gb-raised);
+	text-align: center;
+	cursor: pointer;
+}
+.gb-drop:hover {
+	border-color: var(--mantine-primary-color-filled);
+}
+
+/* Status lines take no room in the export popover until they say something. */
+#export-progress-label:empty,
+#export-status:empty {
+	display: none;
+}
+/* "Saved: <path>" has no spaces to break on; wrap it inside the popover. */
+#export-status {
+	overflow-wrap: anywhere;
 }
 
 /* Keep progress bars visible even at 0%. */
 .mantine-Progress-root {
 	min-height: 8px;
+}
+
+/* Narrow windows: the regions panel drops under the slice and the page scrolls. */
+@media (max-width: 860px) {
+	#app-root {
+		height: auto;
+		min-height: 100vh;
+		overflow: visible;
+	}
+	.gb-body {
+		flex-direction: column;
+	}
+	.gb-canvas {
+		min-height: 420px;
+	}
+	.gb-panel {
+		width: auto;
+		max-height: 70vh;
+		border-left: 0;
+		border-top: 1px solid var(--gb-line);
+	}
 }

@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Annotated, Any, Literal
 
 import numpy as np
@@ -239,6 +240,83 @@ def resolve_colorscale(name: str | None, n: int = 21) -> list[list[Any]]:
 	return [[points[i], _parse_rgb(c)] for i, c in enumerate(colors)]
 
 
+# The same (value, range, colormap) recurs across slices and panels.
+_cached_color = lru_cache(maxsize=4096)(value_to_color)
+
+
+def _region_traces(regions, id2value, zmin, zmax, cmap, selected, flat_color, xaxis, yaxis):
+	"""One panel's filled-polygon traces, gated like the live view (render.js).
+
+	Consecutive rings with the same fill share one trace (a ``None``/NaN gap separates the
+	polygons), which keeps the trace count, and so build and render time, low.
+	Consecutive only, so the draw order is unchanged.
+
+	Returns ``(traces, static_mode)``.
+	"""
+	region_rids = {int(r["rid"]) for r in regions}
+	# The gate is dropped when none of the selected regions are on this slice
+	# (same anti-flash guard as the browser).
+	sel_active = bool(selected) and not region_rids.isdisjoint(selected)
+	static_mode = flat_color is not None and sel_active
+
+	runs: list[list] = []  # [fill, xs, ys]
+	for region in regions:
+		rid = int(region["rid"])
+		if sel_active and rid not in selected:
+			fill = "#d9d9d9"
+		elif static_mode:
+			fill = flat_color
+		else:
+			fill = _cached_color(id2value.get(rid), zmin, zmax, cmap, "#d9d9d9")
+		for ring in region["rings"]:
+			if not runs or runs[-1][0] != fill:
+				runs.append([fill, [], []])
+			_, xs, ys = runs[-1]
+			if xs:
+				xs.append(None)
+				ys.append(None)
+			xs.extend(p[0] for p in ring)
+			ys.extend(p[1] for p in ring)
+	line = dict(color="rgba(255,255,255,0.95)", width=0.7, shape="spline", smoothing=0.6)
+	# Plain dicts: add_traces validates them once, instead of twice via go.Scatter.
+	traces = [
+		dict(
+			type="scatter",
+			x=np.array(xs, dtype=float),  # arrays skip plotly's slow per-item list validation
+			y=np.array(ys, dtype=float),
+			xaxis=xaxis,
+			yaxis=yaxis,
+			mode="lines",
+			fill="toself",
+			fillcolor=fill,
+			line=line,
+			hoverinfo="skip",
+			showlegend=False,
+		)
+		for fill, xs, ys in runs
+	]
+	return traces, static_mode
+
+
+def _colorbar_trace(zmin, zmax, colorscale, title):
+	return go.Scatter(
+		x=[None, None],
+		y=[None, None],
+		mode="markers",
+		marker=dict(
+			size=0,
+			color=[zmin, zmax],
+			colorscale=colorscale,
+			cmin=zmin,
+			cmax=zmax,
+			showscale=True,
+			colorbar=dict(title=dict(text=title, side="right"), thickness=14, len=0.85),
+		),
+		hoverinfo="skip",
+		showlegend=False,
+	)
+
+
 def _auto_range(
 	values, zmin: float | None, zmax: float | None
 ) -> tuple[float | None, float | None]:
@@ -264,7 +342,7 @@ def _auto_range(
 
 def build_export_figure(
 	geometry_payload: dict,
-	score_records: list[dict[str, Any]],
+	score_records: list[dict[str, Any]] | dict[str, list[dict[str, Any]]],
 	slice_index: int,
 	score: str,
 	colorscale: str,
@@ -280,17 +358,25 @@ def build_export_figure(
 	Built from the same pixel geometry the browser uses, so exported figures are
 	oriented and proportioned identically to what the user sees.
 
+	``score_records`` is one group's records, or ``{group: records}`` to draw the
+	groups side by side as titled panels sharing one color range.
+
 	The optional ``selected_rids`` (row selection) and ``flat_color`` (flat-color
 	toggle) mirror the live view's gating in ``assets/render.js`` so an export
 	reflects what's on screen.
 	"""
 	value_col = SCORE_VALUE_COLUMN[score]
-	id2value: dict[int, float] = {}
-	for row in score_records:
-		rid = row.get("Region ID")
-		val = row.get(value_col)
-		if rid is not None and val is not None:
-			id2value[int(rid)] = float(val)
+	# Panel label -> {region id: value}; a single unlabelled panel for one group.
+	panels = score_records if isinstance(score_records, dict) else {None: score_records}
+	panel_values: dict[str | None, dict[int, float]] = {}
+	for label, records in panels.items():
+		id2value = panel_values[label] = {}
+		for row in records:
+			rid = row.get("Region ID")
+			val = row.get(value_col)
+			if rid is not None and val is not None:
+				id2value[int(rid)] = float(val)
+	all_values = [v for id2value in panel_values.values() for v in id2value.values()]
 
 	regions = geometry_payload.get("by_slice", {}).get(str(int(slice_index)), [])
 	dims = geometry_payload.get("dims")
@@ -300,72 +386,47 @@ def build_export_figure(
 	# Auto-range unset limits from the data, matching the live view (render.js).
 	# Without this, density (default range (None, None)) collapses every region
 	# to the colorscale midpoint on export.
-	zmin, zmax = _auto_range(id2value.values(), zmin, zmax)
+	zmin, zmax = _auto_range(all_values, zmin, zmax)
 
-	# Mirror the live view's gating (see assets/render.js): the row selection
-	# narrows coloring to `selected_rids`, and the flat color replaces the
-	# colormap once a selection is narrowing this slice. The gate is dropped when
-	# none of the selected regions are on this slice (same anti-flash guard as the
-	# browser), so the export matches what's on screen.
-	region_rids = {int(r["rid"]) for r in regions}
+	# The row selection narrows coloring to `selected_rids`, and the flat color
+	# replaces the colormap once a selection narrows this slice (see render.js).
 	selected = selected_rids or set()
-	sel_active = bool(selected) and not region_rids.isdisjoint(selected)
-	static_mode = flat_color is not None and sel_active
-
+	static_mode = False
 	fig = go.Figure()
-	for region in regions:
-		rid = int(region["rid"])
-		gated = sel_active and rid not in selected
-		if gated:
-			fill = "#d9d9d9"
-		elif static_mode:
-			fill = flat_color
-		else:
-			fill = value_to_color(
-				id2value.get(rid), zmin, zmax, colorscale=cmap, na_color="#d9d9d9"
-			)
-		for ring in region["rings"]:
-			fig.add_trace(
-				go.Scatter(
-					x=[p[0] for p in ring],
-					y=[p[1] for p in ring],
-					mode="lines",
-					fill="toself",
-					fillcolor=fill,
-					line=dict(
-						color="rgba(255,255,255,0.95)", width=0.7, shape="spline", smoothing=0.6
-					),
-					hoverinfo="skip",
-					showlegend=False,
-				)
+	n = len(panel_values)
+	for i, (label, id2value) in enumerate(panel_values.items()):
+		axis = str(i + 1) if i else ""  # x/y, x2/y2, ...
+		traces, static_mode = _region_traces(
+			regions, id2value, zmin, zmax, cmap, selected, flat_color, f"x{axis}", f"y{axis}"
+		)
+		fig.add_traces(traces)
+		# Panels share the width equally; each keeps its own 1:1 aspect.
+		fig.update_layout(
+			{
+				f"xaxis{axis}": dict(domain=[(i + 0.02) / n, (i + 0.98) / n] if n > 1 else [0, 1]),
+				f"yaxis{axis}": dict(anchor=f"x{axis}", scaleanchor=f"x{axis}"),
+			}
+		)
+		if label is not None:
+			fig.add_annotation(
+				text=label,
+				showarrow=False,
+				xref="paper",
+				yref="paper",
+				x=(i + 0.5) / n,
+				y=1,
+				yanchor="bottom",
 			)
 
-	if id2value and zmin is not None and zmax is not None and not static_mode:
-		fig.add_trace(
-			go.Scatter(
-				x=[None, None],
-				y=[None, None],
-				mode="markers",
-				marker=dict(
-					size=0,
-					color=[zmin, zmax],
-					colorscale=colorbar_scale,
-					cmin=zmin,
-					cmax=zmax,
-					showscale=True,
-					colorbar=dict(title=dict(text=value_col, side="right"), thickness=14, len=0.85),
-				),
-				hoverinfo="skip",
-				showlegend=False,
-			)
-		)
+	if all_values and zmin is not None and zmax is not None and not static_mode:
+		fig.add_trace(_colorbar_trace(zmin, zmax, colorbar_scale, value_col))
 
 	if dims:
 		fig.update_xaxes(visible=False, range=[0, dims["w"]], constrain="domain")
-		fig.update_yaxes(visible=False, range=[dims["h"], 0], scaleanchor="x", constrain="domain")
+		fig.update_yaxes(visible=False, range=[dims["h"], 0], constrain="domain")
 	else:
 		fig.update_xaxes(visible=False)
-		fig.update_yaxes(visible=False, scaleanchor="x")
+		fig.update_yaxes(visible=False)
 
 	fig.update_layout(
 		title=title,
@@ -373,4 +434,180 @@ def build_export_figure(
 		plot_bgcolor="white",
 		margin=dict(l=10, r=10, t=40, b=10),
 	)
+	return fig
+
+
+# Anatomical direction at the low / high slice-index end of each orientation
+# (Allen CCF: AP index grows posteriorly, DV ventrally, LR rightwards).
+_INDEX_ENDS = {
+	"coronal": ("anterior", "posterior"),
+	"sagittal": ("left", "right"),
+	"horizontal": ("dorsal", "ventral"),
+}
+
+_AXIS_TITLE = {
+	"coronal": "Anteroposterior position relative to bregma (mm)",
+	"sagittal": "Mediolateral position relative to bregma (mm)",
+	"horizontal": "Dorsoventral position relative to bregma (mm)",
+}
+
+
+def build_publication_figure(
+	geometry_payload: dict,
+	scores: dict[str, list[dict[str, Any]]],
+	slices_meta: list[dict[str, Any]],
+	score: str,
+	colorscale: str,
+	zmin: float | None,
+	zmax: float | None,
+	*,
+	selected_rids: set[int] | None = None,
+	flat_color: str | None = None,
+	cell_px: int = 260,
+) -> go.Figure:
+	"""Facet grid for publication: rows = groups, columns = consecutive slices.
+
+	One shared color scale, and one annotation axis under the whole grid with a
+	tick per column: the bregma-relative coordinate when every slice has one,
+	otherwise the slice index. ``scores`` maps group label -> score records
+	(empty -> a single unlabelled row of plain atlas maps).
+	"""
+	from plotly.subplots import make_subplots
+
+	groups = list(scores) or [""]
+	n_rows, n_cols = len(groups), len(slices_meta)
+	orientation = geometry_payload.get("orientation")
+	dims = geometry_payload.get("dims")
+	use_coords = all(m.get("coordinate_mm") is not None for m in slices_meta)
+
+	# One range for every panel, or panels would not be comparable.
+	value_col = SCORE_VALUE_COLUMN[score]
+	all_vals = [
+		r[value_col]
+		for recs in scores.values()
+		for r in recs
+		if r.get("Region ID") is not None and r.get(value_col) is not None
+	]
+	zmin, zmax = _auto_range(all_vals, zmin, zmax)
+
+	fig = make_subplots(rows=n_rows, cols=n_cols, horizontal_spacing=0.004, vertical_spacing=0.015)
+	cmap = colorscale or "RdBu_r"
+	selected = selected_rids or set()
+	traces = []
+	any_static = False
+	for i, group in enumerate(groups):
+		id2value = {
+			int(r["Region ID"]): float(r[value_col])
+			for r in scores.get(group, [])
+			if r.get("Region ID") is not None and r.get(value_col) is not None
+		}
+		for j, meta in enumerate(slices_meta):
+			regions = geometry_payload.get("by_slice", {}).get(str(int(meta["slice_index"])), [])
+			k = i * n_cols + j + 1  # make_subplots numbers axes row by row
+			sfx = "" if k == 1 else k
+			cell, static = _region_traces(
+				regions, id2value, zmin, zmax, cmap, selected, flat_color, f"x{sfx}", f"y{sfx}"
+			)
+			traces += cell
+			any_static = any_static or static
+	fig.add_traces(traces)  # one batch: row/col lookups per trace are slow
+	has_colorbar = bool(all_vals) and not any_static
+	colorbar = _colorbar_trace(zmin, zmax, resolve_name(cmap), value_col) if has_colorbar else None
+
+	cell_w, cell_h = (cell_px, cell_px * dims["h"] / dims["w"]) if dims else (cell_px, cell_px)
+	margin = dict(l=110, r=110 if colorbar else 20, t=20, b=110)
+	height = round(n_rows * cell_h) + margin["t"] + margin["b"]
+	width = n_cols * cell_px + margin["l"] + margin["r"]
+	plot_h = height - margin["t"] - margin["b"]
+
+	fig.update_xaxes(visible=False, constrain="domain")
+	fig.update_yaxes(visible=False, constrain="domain")
+	if dims:
+		fig.update_xaxes(range=[0, dims["w"]])
+		fig.update_yaxes(range=[dims["h"], 0])
+	for n in range(1, n_rows * n_cols + 1):  # lock each panel's aspect to its own x
+		sfx = "" if n == 1 else str(n)
+		fig.layout[f"yaxis{sfx}"].scaleanchor = f"x{sfx}"
+
+	if colorbar is not None:
+		colorbar.marker.colorbar.len = 0.6
+		colorbar.marker.colorbar.x = 1.01
+		fig.add_trace(colorbar)
+
+	fig.update_layout(
+		width=width,
+		height=height,
+		margin=margin,
+		paper_bgcolor="white",
+		plot_bgcolor="white",
+		showlegend=False,
+		font=dict(family="Arial", size=14, color="#222"),
+	)
+
+	def px(n: float) -> float:  # pixels below the plot -> paper y
+		return -n / plot_h
+
+	for i, group in enumerate(groups):
+		dom = fig.layout[f"yaxis{i * n_cols + 1 if i else ''}"].domain
+		if group:
+			n = next((r["n_animals"] for r in scores[group] if r.get("n_animals")), None)
+			label = f"<b>{group}</b>" + (
+				f"<br><span style='font-size:12px;color:#666'>n = {int(n)}</span>" if n else ""
+			)
+			fig.add_annotation(
+				xref="paper",
+				yref="paper",
+				x=-12 / (width - margin["l"] - margin["r"]),
+				y=sum(dom) / 2,
+				text=label,
+				showarrow=False,
+				xanchor="right",
+			)
+
+	y0 = px(8)
+	fig.add_shape(
+		type="line",
+		xref="paper",
+		yref="paper",
+		x0=0,
+		x1=1,
+		y0=y0,
+		y1=y0,
+		line=dict(color="#222", width=1.5),
+	)
+	for j, meta in enumerate(slices_meta):
+		dom = fig.layout[f"xaxis{j + 1 if j else ''}"].domain
+		x = sum(dom) / 2
+		label = f"{meta['coordinate_mm']:+.2f}" if use_coords else str(meta["slice_index"])
+		fig.add_shape(
+			type="line",
+			xref="paper",
+			yref="paper",
+			x0=x,
+			x1=x,
+			y0=y0,
+			y1=px(15),
+			line=dict(color="#222", width=1.5),
+		)
+		fig.add_annotation(
+			xref="paper", yref="paper", x=x, y=px(19), text=label, showarrow=False, yanchor="top"
+		)
+	title = _AXIS_TITLE.get(orientation, "Position (mm)") if use_coords else "Slice index"
+	fig.add_annotation(
+		xref="paper", yref="paper", x=0.5, y=px(60), text=title, showarrow=False, yanchor="top"
+	)
+	if orientation in _INDEX_ENDS:
+		ends = _INDEX_ENDS[orientation]
+		if slices_meta[0]["slice_index"] > slices_meta[-1]["slice_index"]:
+			ends = ends[::-1]  # columns run high -> low index
+		hint = dict(
+			xref="paper",
+			yref="paper",
+			y=px(60),
+			yanchor="top",
+			showarrow=False,
+			font=dict(size=12, color="#666"),
+		)
+		fig.add_annotation(x=0, xanchor="left", text=f"◀ {ends[0]}", **hint)
+		fig.add_annotation(x=1, xanchor="right", text=f"{ends[1]} ▶", **hint)
 	return fig

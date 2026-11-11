@@ -61,9 +61,8 @@ def scores_file(tmp_path):
 # Helpers
 # --------------------------------------------------------------------------- #
 def _start(dash_duo):
-	"""Start the real app, with a desktop-sized window so the two-column layout
-	lays out properly (the default 800x600 headless window cramps the panels and
-	the brain-graph's invisible drag layer ends up over the left-column buttons)."""
+	"""Start the real app, with a desktop-sized window so the stage and the regions
+	panel sit side by side (the default 800x600 headless window stacks them)."""
 	dash_duo.driver.set_window_size(1500, 1000)
 	dash_duo.start_server(create_app())
 
@@ -92,6 +91,23 @@ def _upload(dash_duo, container_id, path):
 def _js_click(dash_duo, element):
 	"""Click via JS - needed for the hidden checkbox inputs behind dmc switches."""
 	dash_duo.driver.execute_script("arguments[0].click()", element)
+
+
+def _open(dash_duo, trigger, control_id):
+	"""Click a trigger (CSS selector) and wait for a control in the modal step or
+	popover it opens. Both are always in the DOM; the modal's hidden steps only
+	catch up with callback updates once shown, so open one before reading state."""
+	dash_duo.find_element(trigger).click()
+	_wait(dash_duo, lambda: dash_duo.find_element(f"#{control_id}").is_displayed())
+
+
+# Setup-modal nav tab for the scores step (the top bar is covered once the modal is open).
+SCORES_TAB = ".gb-setup .gb-step-scores"
+
+
+def _ticked(row):
+	"""Whether a regions-list row (a role=checkbox div) is ticked."""
+	return row.get_attribute("aria-checked") == "true"
 
 
 def _trace_count(dash_duo):
@@ -125,10 +141,10 @@ def _load_geojson_and_scores(dash_duo, geojson_file, scores_file):
 # Tests
 # --------------------------------------------------------------------------- #
 def test_app_boots_clean(dash_duo):
-	"""App mounts, shows the empty-state figure, and logs no severe errors."""
+	"""App mounts, shows the empty state, and logs no severe errors."""
 	_start(dash_duo)
 	dash_duo.wait_for_element("#brain-graph", timeout=20)
-	dash_duo.wait_for_contains_text("#brain-graph", "Build or load slices", timeout=20)
+	dash_duo.wait_for_contains_text("#empty-state", "Load an atlas", timeout=20)
 
 	# Buttons that gate on stores start disabled (toggle_* callbacks).
 	assert not dash_duo.find_element("#build-geo-btn").is_enabled()
@@ -156,6 +172,7 @@ def test_load_geojson_renders_brain(dash_duo, geojson_file):
 	dash_duo.wait_for_contains_text("#slice-label", "(1/1)", timeout=20)
 	_wait(dash_duo, lambda: _trace_count(dash_duo) >= 2)
 	# save-geo-btn is enabled by toggle_save_geo once slices exist.
+	_open(dash_duo, "#chip-slices", "save-geo-btn")
 	_wait(dash_duo, lambda: dash_duo.find_element("#save-geo-btn").is_enabled())
 
 
@@ -170,6 +187,7 @@ def test_load_scores_populates_groups_and_table(dash_duo, geojson_file, scores_f
 
 	assert _input(dash_duo, "group-select").get_attribute("value") == "All (mean)"
 	dash_duo.wait_for_contains_text("#results-table", "Caudoputamen", timeout=20)
+	_open(dash_duo, "#chip-scores", "save-scores-btn")
 	_wait(dash_duo, lambda: dash_duo.find_element("#save-scores-btn").is_enabled())
 
 
@@ -183,6 +201,7 @@ def test_score_select_updates_limits(dash_duo):
 		By.XPATH, "//div[@id='score-select']//label[contains(normalize-space(.),'Frequency')]"
 	).click()
 
+	_open(dash_duo, "#color-open-btn", "zmin-input")
 	_wait(dash_duo, lambda: float(_input(dash_duo, "zmin-input").get_attribute("value")) == 0.0)
 	assert float(_input(dash_duo, "zmax-input").get_attribute("value")) == 1.0
 
@@ -192,6 +211,7 @@ def test_static_color_toggle_disables_picker(dash_duo):
 	toggle is switched off."""
 	_start(dash_duo)
 	dash_duo.wait_for_element("#static-color-toggle", timeout=20)
+	_open(dash_duo, "#color-open-btn", "static-color")
 
 	# Starts checked -> picker enabled.
 	assert _input(dash_duo, "static-color").is_enabled()
@@ -217,17 +237,15 @@ def test_row_selection_and_deselect_all(dash_duo, geojson_file, scores_file):
 	_load_geojson_and_scores(dash_duo, geojson_file, scores_file)
 
 	def checkboxes():
-		return dash_duo.find_elements(
-			"#results-table tbody input[type=radio], #results-table tbody input[type=checkbox]"
-		)
+		return dash_duo.find_elements("#results-table [role=checkbox]")
 
 	_wait(dash_duo, lambda: len(checkboxes()) >= 1)
-	_js_click(dash_duo, checkboxes()[0])
-	_wait(dash_duo, lambda: any(c.is_selected() for c in checkboxes()))
+	checkboxes()[0].click()
+	_wait(dash_duo, lambda: any(_ticked(c) for c in checkboxes()))
 	assert _trace_count(dash_duo) >= 2  # still rendering with a selection active
 
 	dash_duo.find_element("#deselect-all-btn").click()
-	_wait(dash_duo, lambda: not any(c.is_selected() for c in checkboxes()))
+	_wait(dash_duo, lambda: not any(_ticked(c) for c in checkboxes()))
 
 
 def test_clear_cache_resets(dash_duo, geojson_file, scores_file):
@@ -236,17 +254,19 @@ def test_clear_cache_resets(dash_duo, geojson_file, scores_file):
 	_start(dash_duo)
 	dash_duo.wait_for_element("#brain-graph", timeout=20)
 	_load_geojson_and_scores(dash_duo, geojson_file, scores_file)
+	_open(dash_duo, "#chip-slices", "save-geo-btn")
 	_wait(dash_duo, lambda: dash_duo.find_element("#save-geo-btn").is_enabled())
 
 	dash_duo.find_element("#clear-cache-btn").click()
 
 	# load-cached-status lives in an inactive tab (hidden -> no readable text), so
-	# assert on the visible resets: Save buttons re-disable, the slice label and
-	# brain figure empty out.
+	# assert on the other resets: the Save buttons re-disable, the slice bar hides
+	# and the empty state comes back.
 	_wait(dash_duo, lambda: not dash_duo.find_element("#save-geo-btn").is_enabled())
+	_open(dash_duo, SCORES_TAB, "save-scores-btn")
 	_wait(dash_duo, lambda: not dash_duo.find_element("#save-scores-btn").is_enabled())
 	_wait(dash_duo, lambda: dash_duo.find_element("#slice-label").text == "")
-	dash_duo.wait_for_contains_text("#brain-graph", "Build or load slices", timeout=20)
+	dash_duo.wait_for_contains_text("#empty-state", "Load an atlas", timeout=20)
 
 
 def test_downloads_emit_files(dash_duo, geojson_file, scores_file):
@@ -256,9 +276,12 @@ def test_downloads_emit_files(dash_duo, geojson_file, scores_file):
 	_start(dash_duo)
 	dash_duo.wait_for_element("#brain-graph", timeout=20)
 	_load_geojson_and_scores(dash_duo, geojson_file, scores_file)
+	# Each Save button lives on its own step of the setup modal.
+	_open(dash_duo, "#chip-slices", "save-geo-btn")
 	_wait(dash_duo, lambda: dash_duo.find_element("#save-geo-btn").is_enabled())
-
 	dash_duo.find_element("#save-geo-btn").click()
+	_open(dash_duo, SCORES_TAB, "save-scores-btn")
+	_wait(dash_duo, lambda: dash_duo.find_element("#save-scores-btn").is_enabled())
 	dash_duo.find_element("#save-scores-btn").click()
 
 	def downloaded(name):
@@ -277,6 +300,7 @@ def test_export_current_slice(dash_duo, geojson_file, scores_file, tmp_path):
 
 	out_dir = tmp_path / "export"
 	out_dir.mkdir()
+	_open(dash_duo, "#export-open-btn", "export-dir")
 	_set_input(dash_duo, "export-dir", str(out_dir))
 
 	dash_duo.find_element("#export-btn").click()
@@ -296,6 +320,7 @@ def test_process_data_background(dash_duo, geojson_file, quint_dir, metadata_csv
 	_upload(dash_duo, "upload-geojson", geojson_file)
 	dash_duo.wait_for_contains_text("#slice-label", "Slice index 1", timeout=20)
 
+	_open(dash_duo, "#chip-scores", "score-data-dir")
 	_input(dash_duo, "score-data-dir").send_keys(quint_dir)
 	_input(dash_duo, "metadata-path").send_keys(metadata_csv)
 	# metadata_csv is comma-separated; the metadata-sep input defaults to ';'.
