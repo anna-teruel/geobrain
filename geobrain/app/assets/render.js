@@ -120,9 +120,13 @@ function autoRange(valueMaps, vmin, vmax) {
 window.dash_clientside.geobrain = {
 	// Coalesce rapid slider drags to one render per animation frame. Each call
 	// stashes the latest inputs; a single requestAnimationFrame then rebuilds
-	// with the newest values and patches the existing plot via Plotly.react. Fast
+	// with the newest values and hands the figure to Dash via set_props. Fast
 	// scrolling thus skips the intermediate slices it can't keep up with instead
 	// of queueing a full rebuild for every one of them on the main thread.
+	//
+	// The figure must go through Dash, not straight into Plotly.react: dcc.Graph
+	// replots from its own `figure` prop on zoom/pan, so if that prop is left
+	// stale (empty) the slice vanishes as soon as the user zooms.
 	_rafPending: false,
 	_latestArgs: null,
 
@@ -141,8 +145,7 @@ window.dash_clientside.geobrain = {
 				ns._rafPending = false;
 				const args = ns._latestArgs;
 				ns._latestArgs = null;
-				const fig = ns.buildFigure.apply(ns, args);
-				window.Plotly.react(gd, fig.data, fig.layout);
+				window.dash_clientside.set_props("brain-graph", { figure: ns.buildFigure.apply(ns, args) });
 			});
 		}
 		return window.dash_clientside.no_update;
