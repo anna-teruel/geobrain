@@ -48,16 +48,11 @@ body {
 	border-bottom: 1px solid var(--gb-line);
 }
 .gb-brand {
-	font-family: Nunito, Inter, system-ui, sans-serif;
 	display: flex;
 	align-items: center;
-	gap: 10px;
-	font-size: 19px;
-	font-weight: 800;
-	letter-spacing: -0.01em;
 }
 .gb-mark {
-	height: 28px;
+	height: 32px;
 	display: block;
 }
 .gb-pipe {
@@ -107,17 +102,28 @@ body {
 }
 .has-atlas .gb-step-atlas .gb-dot,
 .has-slices .gb-step-slices .gb-dot,
-.has-scores .gb-step-scores .gb-dot {
+.has-scores .gb-step-scores .gb-dot,
+.has-export .gb-step-export .gb-dot {
 	border-color: var(--gb-ok);
 	background: var(--gb-ok);
 	font-size: 0; /* hide the number, keep it for screen readers */
 }
 .has-atlas .gb-step-atlas .gb-dot::after,
 .has-slices .gb-step-slices .gb-dot::after,
-.has-scores .gb-step-scores .gb-dot::after {
+.has-scores .gb-step-scores .gb-dot::after,
+.gb-dot-check::after {
 	content: "✓";
 	font-size: 11px;
 	font-weight: 700;
+	color: var(--mantine-color-body);
+}
+
+/* Export chip: a grey check (ring and tick in the dimmed color) until a figure
+   is exported; then has-export on #app-root turns it green like the steps. */
+.gb-dot-check::after {
+	color: var(--mantine-color-dimmed);
+}
+.has-export .gb-dot-check::after {
 	color: var(--mantine-color-body);
 }
 
@@ -149,21 +155,6 @@ body {
 	align-items: center;
 	gap: 8px 12px;
 	padding: 12px 16px;
-}
-.gb-push {
-	margin-left: auto;
-}
-.gb-legend {
-	display: inline-flex;
-	align-items: center;
-	gap: 8px;
-	font-variant-numeric: tabular-nums;
-	font-weight: 500;
-}
-.gb-legend-bar {
-	width: 120px;
-	height: 10px;
-	border-radius: 5px;
 }
 .gb-canvas {
 	flex: 1;
@@ -345,7 +336,7 @@ body {
 	flex: none;
 }
 
-/* Dropdowns under the color legend and the Export button (render.js toggles is-open). */
+/* Dropdown under the Colour settings button (render.js toggles is-open). */
 .gb-popwrap {
 	position: relative;
 }
@@ -353,7 +344,7 @@ body {
 	display: none;
 	position: absolute;
 	top: calc(100% + 8px);
-	right: 0;
+	left: 0;
 	z-index: 300;
 	max-width: calc(100vw - 32px);
 	padding: 16px;
@@ -452,12 +443,12 @@ body {
 	border-color: var(--mantine-primary-color-filled);
 }
 
-/* Status lines take no room in the export popover until they say something. */
+/* Status lines take no room in the export window until they say something. */
 #export-progress-label:empty,
 #export-status:empty {
 	display: none;
 }
-/* "Saved: <path>" has no spaces to break on; wrap it inside the popover. */
+/* "Saved: <path>" has no spaces to break on; wrap it inside the export window. */
 #export-status {
 	overflow-wrap: anywhere;
 }

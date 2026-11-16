@@ -69,6 +69,15 @@ def _notify(
 	)
 
 
+def _mark_exported(summary: str) -> None:
+	"""Record a successful export for the Export chip (grey check -> green).
+
+	Through ``set_props`` like ``_notify``, so the export callbacks, background
+	ones included, keep their outputs as they are.
+	"""
+	set_props("export-done-store", {"data": summary})
+
+
 def _status(message: str, color: str):
 	"""Inline status text colored by outcome (green=done, red=failed).
 
@@ -958,6 +967,7 @@ def register_callbacks(app) -> None:
 		"""Drop the session's cached data from disk and reset the in-browser stores,
 		buttons, progress bars, and text inputs so the app returns to a clean slate."""
 		cache.clear(session_id)
+		set_props("export-done-store", {"data": None})
 		_notify("Cache cleared.", "info")
 		return (
 			None,  # session-store
@@ -1079,11 +1089,11 @@ def register_callbacks(app) -> None:
 			_notify(f"Export failed: {exc}", "error")
 			return _status(f"Export failed: {exc}", "red")
 		_notify(f"Saved: {path}", "success")
+		_mark_exported("1 slice")
 		return _status(f"Saved: {path}", "green")
 
 	@app.callback(
 		Output("export-status", "children", allow_duplicate=True),
-		Output("download-pub", "data"),
 		Input("export-pub-btn", "n_clicks"),
 		State("session-store", "data"),
 		State("scores-store", "data"),
@@ -1092,6 +1102,7 @@ def register_callbacks(app) -> None:
 		State("colorscale-select", "value"),
 		State("zmin-input", "value"),
 		State("zmax-input", "value"),
+		State("export-dir", "value"),
 		State("export-name", "value"),
 		State("export-format", "value"),
 		State("selected-rids-store", "data"),
@@ -1121,6 +1132,7 @@ def register_callbacks(app) -> None:
 		colorscale,
 		zmin,
 		zmax,
+		out_dir,
 		name,
 		fmt,
 		selected_ids,
@@ -1129,13 +1141,15 @@ def register_callbacks(app) -> None:
 		lo,
 		hi,
 	):
+		"""Render the publication grid and save it to the export folder, next to
+		the single-slice and all-slices exports."""
 		geometry = cache.get(session_id, "geometry")
 		if geometry is None or not slices:
 			_notify("Build or load slices first.", "warning")
-			return "No geometry in memory - build or load slices first.", no_update
+			return "No geometry in memory - build or load slices first."
 		if lo is None or hi is None:
 			_notify("Enter a From and To value for the grid.", "warning")
-			return "Enter a From and To value.", no_update
+			return "Enter a From and To value."
 		lo, hi = sorted((lo, hi))
 		# Same rule as the figure's axis: coordinates when every slice has one.
 		use_coords = all(m.get("coordinate_mm") is not None for m in slices)
@@ -1143,7 +1157,7 @@ def register_callbacks(app) -> None:
 		chosen = [m for m in slices if lo <= m[key] <= hi]
 		if not chosen:
 			_notify("No slices fall in that range.", "warning")
-			return "No slices fall in that range.", no_update
+			return "No slices fall in that range."
 
 		groups = {g: r for g, r in (scores or {}).items() if g != COMBINED_GROUP_LABEL}
 		selected, flat = _selected_flat(selected_ids, static_color, use_flat)
@@ -1159,17 +1173,18 @@ def register_callbacks(app) -> None:
 				selected_rids=selected,
 				flat_color=flat,
 			)
-			ext = fmt or "svg"
-			fname = f"{name or 'brain_slice'}_grid.{ext}"
-			if ext == "html":
-				download = dcc.send_string(fig.to_html(), fname)
-			else:
-				download = dcc.send_bytes(fig.to_image(format=ext), fname)
-		except Exception as exc:  # missing kaleido, etc.
+			path = geobrain.save_figure(
+				fig,
+				out_dir=out_dir or ".",
+				filename=f"{name or 'brain_slice'}_grid",
+				extension=fmt or "svg",
+			)
+		except Exception as exc:  # bad path, missing kaleido, etc.
 			_notify(f"Export failed: {exc}", "error")
-			return _status(f"Export failed: {exc}", "red"), no_update
-		_notify(f"Downloading {fname}", "success")
-		return _status(f"Downloading {fname}", "green"), download
+			return _status(f"Export failed: {exc}", "red")
+		_notify(f"Saved: {path}", "success")
+		_mark_exported("Grid")
+		return _status(f"Saved: {path}", "green")
 
 	@app.callback(
 		Output("export-status", "children", allow_duplicate=True),
@@ -1260,6 +1275,7 @@ def register_callbacks(app) -> None:
 
 		set_progress((100, ""))
 		_notify(f"Saved {n} slice(s) to {out_dir or '.'}", "success")
+		_mark_exported(f"{n} slice{'' if n == 1 else 's'}")
 		return _status(f"Saved {n} slice(s) to {out_dir or '.'}", "green")
 
 	app.clientside_callback(
@@ -1344,6 +1360,7 @@ def register_callbacks(app) -> None:
 		Output("chip-atlas-value", "children"),
 		Output("chip-slices-value", "children"),
 		Output("chip-scores-value", "children"),
+		Output("chip-export-value", "children"),
 		Output("nav-atlas-value", "children"),
 		Output("nav-slices-value", "children"),
 		Output("nav-scores-value", "children"),
@@ -1351,16 +1368,14 @@ def register_callbacks(app) -> None:
 		Input("slices-store", "data"),
 		Input("geometry-store", "data"),
 		Input("scores-store", "data"),
+		Input("export-done-store", "data"),
 	)
 
 	app.clientside_callback(
-		ClientsideFunction(namespace="geobrain", function_name="legend"),
-		Output("legend-bar", "style"),
-		Output("legend-min", "children"),
-		Output("legend-max", "children"),
-		Input("colorscale-stops-store", "data"),
-		Input("zmin-input", "value"),
-		Input("zmax-input", "value"),
+		ClientsideFunction(namespace="geobrain", function_name="openExport"),
+		Output("export-modal", "opened"),
+		Input("chip-export", "n_clicks"),
+		prevent_initial_call=True,
 	)
 
 	app.clientside_callback(

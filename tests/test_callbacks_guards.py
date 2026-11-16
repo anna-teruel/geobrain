@@ -450,9 +450,9 @@ def test_export_slice_side_by_side_passes_every_group(
 	assert captured["r"] == {"control": scores["control"], "treated": scores["treated"]}
 
 
-def test_export_publication_range_guards(callbacks_by_name, toast_ctx, session):
+def test_export_publication_range_guards(callbacks_by_name, toast_ctx, session, tmp_path):
 	"""No geometry, a missing bound, or a range that holds no slice each return a
-	message and no download; From/To given in either order select the slices."""
+	message and save nothing; From/To given in either order select the slices."""
 	export = callbacks_by_name["export_publication"]
 	slices = [{"slice_index": i, "coordinate_mm": float(i)} for i in range(3)]
 
@@ -466,6 +466,7 @@ def test_export_publication_range_guards(callbacks_by_name, toast_ctx, session):
 			"Viridis",
 			None,
 			None,
+			str(tmp_path),
 			"n",
 			"svg",
 			[],
@@ -475,7 +476,7 @@ def test_export_publication_range_guards(callbacks_by_name, toast_ctx, session):
 			hi,
 		)
 
-	assert call(0, 1)[1] is no_update  # nothing cached yet
+	assert call(0, 1) == "No geometry in memory - build or load slices first."
 	cache.put(
 		session,
 		"geometry",
@@ -485,6 +486,6 @@ def test_export_publication_range_guards(callbacks_by_name, toast_ctx, session):
 			"orientation": "coronal",
 		},
 	)
-	assert call(None, 1)[1] is no_update
-	assert call(10, 20)[0] == "No slices fall in that range."
-	assert call(2, 1)[0] != "No slices fall in that range."  # reversed bounds are sorted
+	assert call(None, 1) == "Enter a From and To value."
+	assert call(10, 20) == "No slices fall in that range."
+	assert call(2, 1) != "No slices fall in that range."  # reversed bounds are sorted

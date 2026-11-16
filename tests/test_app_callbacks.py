@@ -300,7 +300,7 @@ def test_export_current_slice(dash_duo, geojson_file, scores_file, tmp_path):
 
 	out_dir = tmp_path / "export"
 	out_dir.mkdir()
-	_open(dash_duo, "#export-open-btn", "export-dir")
+	_open(dash_duo, "#chip-export", "export-dir")
 	_set_input(dash_duo, "export-dir", str(out_dir))
 
 	dash_duo.find_element("#export-btn").click()

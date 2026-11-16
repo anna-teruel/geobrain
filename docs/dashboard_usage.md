@@ -36,10 +36,11 @@ everything you only need now and then opens on demand.
 
 - **Top bar** — the logo, the **pipeline status** (three chips: *Atlas*,
   *Slices*, *Scores*, each showing what is loaded and a check once that step is
-  done), a button that shows/hides the regions panel, the **light/dark
-  toggle**, and the **Export** button.
+  done), the **Export** chip (a grey check that turns green once a figure has
+  been exported), a button that shows/hides the regions panel, and the
+  **light/dark toggle**.
 - **Stage** — the brain figure. Above it sit the **Score** and **Group**
-  selectors and the **color legend**; below it the **slice slider**.
+  selectors and the **Colour settings** button; below it the **slice slider**.
 - **Regions panel** (right) — the table of regions on the current slice.
 - **Data setup** (a dialog) — the processing pipeline, one step per tab:
   1. Atlas (or load previously saved files)
@@ -166,8 +167,8 @@ Once geometry **and** scores are present, the brain is colored region-by-region.
   panel on one shared color range. Zooming or panning one panel moves them all,
   the regions table gets one value column per group, and exports keep the
   panels.
-- **Color legend** (top right of the stage) — shows the active colorscale and
-  its range. Click it for the color settings:
+- **Colour settings** (next to the Group selector) — opens the color options.
+  The colorbar on the figure shows the active colorscale and its range.
   - **Colorscale**, **Min / Max** — the colormap and its range (blank = auto).
   - **Flat color for selected regions** — fill a highlighted subset with one
     solid color.
@@ -185,7 +186,7 @@ Row selection, flat color, and the table filter are covered in detail in
 
 ## Exporting figures
 
-Click **Export** in the top bar:
+Click the **Export** chip in the top bar to open the **Export figure** window:
 
 1. **Output folder** — where files are written (**Browse** opens a folder
    dialog). Defaults to the current directory (`.`).

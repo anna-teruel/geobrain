@@ -418,28 +418,32 @@ window.dash_clientside.geobrain = {
 		return [true, step];
 	},
 
+	// Open the export window from the Export chip.
+	openExport: function () {
+		return true;
+	},
+
 	// Pipeline status for the top-bar chips and the setup-modal nav. The has-*
 	// classes on #app-root drive the done checks and the empty state (styles.css).
-	pipeline: function (atlasName, slices, geometry, scores) {
+	// `exported` is the last successful export's summary (export-done-store).
+	pipeline: function (atlasName, slices, geometry, scores, exported) {
 		const nSlices = (slices || []).length;
 		const nGroups = Object.keys(scores || {}).filter((g) => g !== COMBINED_GROUP).length;
 		// Loaded GeoJSON carries its own geometry, so it satisfies the atlas step too.
 		const atlas = atlasName || (nSlices ? "From GeoJSON" : "Not loaded");
 		const sl = nSlices ? `${nSlices} ${(geometry && geometry.orientation) || "loaded"}` : "Not built";
 		const sc = nGroups ? `${nGroups} group${nGroups === 1 ? "" : "s"}` : "Not computed";
-		const cls = ["gb", (atlasName || nSlices) && "has-atlas", nSlices && "has-slices", nGroups && "has-scores"]
+		const ex = exported || "Not exported";
+		const cls = [
+			"gb",
+			(atlasName || nSlices) && "has-atlas",
+			nSlices && "has-slices",
+			nGroups && "has-scores",
+			exported && "has-export",
+		]
 			.filter(Boolean)
 			.join(" ");
-		return [cls, atlas, sl, sc, atlas, sl, sc];
-	},
-
-	// Legend chip in the stage toolbar: the active colorscale and its limits.
-	legend: function (stops, zmin, zmax) {
-		const css = (stops && stops.length ? stops : FALLBACK_STOPS)
-			.map((s) => `rgb(${s[1].join(",")}) ${s[0] * 100}%`)
-			.join(", ");
-		const txt = (v) => (isNum(v) ? String(Number(v)) : "auto");
-		return [{ background: `linear-gradient(90deg, ${css})` }, txt(zmin), txt(zmax)];
+		return [cls, atlas, sl, sc, ex, atlas, sl, sc];
 	},
 
 	stepSlice: function (prev, next, value, min, max) {
@@ -479,7 +483,7 @@ document.addEventListener("keydown", function (e) {
 	if ((e.key === " " || e.key === "Enter") && toggleRegionRow(e)) e.preventDefault();
 });
 
-// Dropdowns (color settings, export): a click on a .gb-popwrap's button toggles
+// Dropdowns (colour settings): a click on a .gb-popwrap's button toggles
 // it, a click anywhere else closes it. composedPath, not e.target: picking an
 // option inside a Select removes the option from the DOM before this runs.
 document.addEventListener("click", function (e) {

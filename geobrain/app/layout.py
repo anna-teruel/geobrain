@@ -543,13 +543,11 @@ def _popover(trigger, body, width):
 	)
 
 
-# top bar: brand, pipeline status, global actions
-def _export_popover():
-	return _popover(
-		dmc.Button("Export", id="export-open-btn"),
+# export window: opened from the Export chip in the top bar
+def _export_modal():
+	return dmc.Modal(
 		dmc.Stack(
 			[
-				dmc.Text("Export figure", fw=600, size="sm"),
 				_browse_field("export-dir", "browse-export-dir-btn", "Output folder", value="."),
 				dmc.TextInput(id="export-name", label="File name", value="brain_slice"),
 				dmc.SegmentedControl(
@@ -586,18 +584,30 @@ def _export_popover():
 			],
 			gap="sm",
 		),
-		340,
+		id="export-modal",
+		title="Export figure",
+		size=420,
+		centered=True,
+		# Mounted while closed so the export callbacks can reach its controls,
+		# and inline like the setup modal.
+		keepMounted=True,
+		withinPortal=False,
+		styles={
+			"header": {"borderBottom": "1px solid var(--gb-line)"},
+			"title": {"fontWeight": 600},
+			"body": {"paddingTop": "var(--mantine-spacing-md)"},
+		},
 	)
 
 
+# top bar: brand, pipeline status, global actions
 def _header():
 	return html.Header(
 		[
 			html.Div(
-				[
-					html.Img(src="/assets/GeoBrain_mark.png", alt="", className="gb-mark"),
-					html.Span("GeoBrain"),
-				],
+				# Full logo (brain + coloured wordmark), a downsized copy of
+				# docs/logos/GeoBrain_logo1.png.
+				html.Img(src="/assets/GeoBrain_resized.png", alt="GeoBrain", className="gb-mark"),
 				className="gb-brand",
 			),
 			html.Nav(
@@ -612,6 +622,19 @@ def _header():
 						className=f"gb-chip gb-step-{step}",
 					)
 					for i, (step, title, empty) in enumerate(PIPELINE, start=1)
+				]
+				+ [
+					# Not a setup step: opens the export window. Its check turns
+					# from grey to green once a figure has been exported (has-export).
+					html.Button(
+						[
+							html.Span(className="gb-dot gb-dot-check"),
+							html.Span("Export", className="gb-chip-label"),
+							html.Span("Not exported", id="chip-export-value"),
+						],
+						id="chip-export",
+						className="gb-chip gb-step-export",
+					)
 				],
 				className="gb-pipe",
 				**{"aria-label": "Data pipeline"},
@@ -636,7 +659,6 @@ def _header():
 						styles={"track": {"cursor": "pointer"}, "trackLabel": {"fontSize": "1rem"}},
 						**{"aria-label": "Dark theme"},
 					),
-					_export_popover(),
 				],
 				gap="sm",
 				ml="auto",
@@ -649,23 +671,10 @@ def _header():
 # stage: the slice figure with its view controls
 def _color_popover():
 	return _popover(
-		dmc.Button(
-			html.Span(
-				[
-					html.Span(id="legend-min"),
-					html.Span(id="legend-bar", className="gb-legend-bar"),
-					html.Span(id="legend-max"),
-				],
-				className="gb-legend gb-num",
-			),
-			id="color-open-btn",
-			variant="default",
-			rightSection="▾",
-			**{"aria-label": "Color settings"},
-		),
+		dmc.Button("Colour settings", id="color-open-btn", variant="default", rightSection="▾"),
 		dmc.Stack(
 			[
-				dmc.Text("Color", fw=600, size="sm"),
+				dmc.Text("Colour settings", fw=600, size="sm"),
 				# Dropdowns stay inside the popover (no portal) so picking
 				# an option doesn't count as a click outside and close it.
 				dmc.Select(
@@ -733,7 +742,7 @@ def _stage():
 						w=180,
 						**{"aria-label": "Group"},
 					),
-					html.Div(_color_popover(), className="gb-push"),
+					_color_popover(),
 				],
 				className="gb-toolbar",
 			),
@@ -864,11 +873,13 @@ def _stores():
 		# Region ids ticked in the regions list; render.js keeps its own copy in sync.
 		dcc.Store(id="selected-rids-store", storage_type="memory", data=[]),
 		dcc.Store(id="colorscale-stops-store", storage_type="memory"),
+		# Short summary of the last successful export ("1 slice", "Grid", ...);
+		# None until something is exported. Drives the Export chip.
+		dcc.Store(id="export-done-store", storage_type="memory"),
 		# Single source for render.js's score -> value column lookup.
 		dcc.Store(id="score-columns-store", data=SCORE_VALUE_COLUMN),
 		dcc.Download(id="download-geojson"),
 		dcc.Download(id="download-scores"),
-		dcc.Download(id="download-pub"),
 	]
 
 
@@ -878,7 +889,8 @@ def build_layout():
 		forceColorScheme="dark",
 		theme=THEME,
 		# Single full-viewport page: top bar, then the stage beside the regions
-		# panel. Everything else lives in the setup modal and two popovers.
+		# panel. Everything else lives in the setup and export windows and the
+		# colour settings popover.
 		children=html.Div(
 			[
 				*_stores(),
@@ -887,6 +899,7 @@ def build_layout():
 				_header(),
 				html.Div([_stage(), _regions_panel()], className="gb-body"),
 				_setup_modal(),
+				_export_modal(),
 			],
 			id="app-root",
 			className="gb",
